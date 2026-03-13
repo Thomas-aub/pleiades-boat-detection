@@ -1,0 +1,113 @@
+# =============================================================================
+# data_prep.yaml
+# =============================================================================
+# Master configuration for the Pleiades Neo boat-detection preprocessing
+# pipeline. All hyperparameters are centralised here; no magic numbers
+# in source files.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# I/O paths (relative to the project root, or absolute)
+# ---------------------------------------------------------------------------
+paths:
+  raw_dir:        "data/raw"                  # source GeoTIFFs + GeoJSONs
+  tiles_dir:      "data/processed/tiles"      # step 1 output  (GeoTIFF tiles)
+  labels_raw_dir: "data/processed/labels_raw" # step 2 output  (YOLO .txt, pre-split)
+  images_dir:     "data/processed/images"     # step 3+ output ({train,val,test}/)
+  labels_dir:     "data/processed/labels"     # step 3+ output ({train,val,test}/)
+  archive_dir:    "data/processed/archive"    # excess background tiles
+
+# ---------------------------------------------------------------------------
+# Step 1 — Tiling (src/data/tiler.py)
+# ---------------------------------------------------------------------------
+tiling:
+  tile_size:       320      # tile width AND height in pixels
+  overlap:         64       # pixel overlap between adjacent tiles  (0 = none)
+  min_percentile:  1.0      # lower percentile for global contrast stretching
+  max_percentile:  99.0     # upper percentile for global contrast stretching
+
+  # 1-based band indices to use as (R, G, B).
+  # null = auto-detect:  ≥3 bands → first 3;  1 band (PAN) → replicate to RGB.
+  # Example for a 4-band BGRN image with desired true-colour RGB: [3, 2, 1]
+  bands: null
+
+  # GeoTIFF compression applied to every output tile.
+  # "lzw" (lossless, fast decode) is a good default for uint8 imagery.
+  compress: "lzw"
+
+# ---------------------------------------------------------------------------
+# Step 2 — Annotation conversion (src/data/annotations.py)
+# ---------------------------------------------------------------------------
+annotations:
+  # Must match tiling.tile_size; used for coordinate normalisation.
+  tile_size: 320
+
+  # Minimum fraction of an OBB's area that must be visible inside the tile
+  # for the annotation to be included.  Range: (0.0, 1.0].
+  min_visible: 0.25
+
+  # Minimum OBB side length in pixels.  Boxes smaller than this on either
+  # axis are symmetrically elongated from their centre to reach this size.
+  min_size_border: 1.0
+
+  # GeoJSON class_id → YOLO class_id remapping.
+  # Classes absent from this map AND not in skip_classes cause a warning.
+  class_map:
+    0: 0
+    1: 1
+    2: 2
+    3: 3
+    4: 4
+    5: 5
+    6: 4   # class 6 merged into class 4
+
+  # GeoJSON class IDs to discard entirely (no label written).
+  skip_classes: [9]
+
+# ---------------------------------------------------------------------------
+# Step 3 — Train / Val / Test split (src/data/split.py)
+# ---------------------------------------------------------------------------
+split:
+  # Fractions must sum to 1.0.
+  train_ratio: 0.70
+  val_ratio:   0.20
+  test_ratio:  0.10
+
+  # Fixed seed guarantees reproducible splits across runs.
+  random_seed: 42
+
+# ---------------------------------------------------------------------------
+# Step 4 — Background balancing (src/data/split.py :: BackgroundBalancer)
+# ---------------------------------------------------------------------------
+balance:
+  # Target fraction of the final split that should be background tiles.
+  # e.g. 0.10 → 10 % background, 90 % annotated.
+  background_ratio: 0.10
+
+  random_seed: 42
+
+  # Only these splits are balanced; "test" is left untouched intentionally.
+  apply_to_splits: ["train", "val"]
+
+# ---------------------------------------------------------------------------
+# Step 5 — Upsampling (src/data/transforms.py)
+# ---------------------------------------------------------------------------
+transforms:
+  # Source size must match tiling.tile_size.
+  tile_size:   320
+  target_size: 640   # desired output resolution in pixels
+
+  # Interpolation algorithm for cv2.resize.
+  # Options: INTER_LANCZOS4 (sharpest), INTER_CUBIC (good quality, no ringing),
+  #          INTER_LINEAR (fast bilinear, softer)
+  interpolation: "INTER_CUBIC"
+
+  # true  → overwrite files in-place (saves disk space)
+  # false → write new files with a "_<target_size>" suffix beside the originals
+  overwrite: true
+
+  # Number of parallel worker processes.  null = all logical CPU cores.
+  max_workers: null
+
+  # Only these splits are upsampled; "test" keeps its original resolution.
+  apply_to_splits: ["train", "val"]

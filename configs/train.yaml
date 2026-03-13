@@ -1,0 +1,73 @@
+# =============================================================================
+# configs/train.yaml
+# =============================================================================
+# All YOLO-OBB training hyperparameters for the boat detection model.
+# No values should be hardcoded in Python files; change them here instead.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  # Pretrained weights to start from.
+  # Variants: yolo11n-obb | yolo11s-obb | yolo11m-obb | yolo11l-obb | yolo11x-obb
+  # Smaller = faster/less accurate;  larger = slower/more accurate.
+  weights: "yolo11m-obb.pt"
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+training:
+  dataset_yaml: "data/dataset.yaml"   # path to the YOLO dataset config
+
+  # ── Core training knobs ──────────────────────────────────────────────────
+  epochs:        200
+  imgsz:         640     # must match the output of transforms.py (target_size)
+  batch_size:    8       # reduce to 4 or 2 if GPU OOM
+  workers:       4       # DataLoader worker processes
+  patience:      15      # early-stopping: stop if no improvement for N epochs
+
+  # ── Optimiser ────────────────────────────────────────────────────────────
+  lr0:           0.005   # initial learning rate
+  lrf:           0.1     # final LR multiplier → final_lr = lr0 × lrf = 0.0005
+                          # NOTE: lrf is a *fraction* of lr0, not an absolute value
+  momentum:      0.937
+  weight_decay:  0.0005
+  warmup_epochs: 3.0
+
+  # ── Run management ───────────────────────────────────────────────────────
+  project:       "runs/obb"
+  run_name:      "boat_obb_v1"
+  device:        0        # GPU id (int), "cpu", or "0,1" for multi-GPU
+  resume:        false    # set true to resume from runs/obb/<run_name>/weights/last.pt
+  save_period:   30       # save checkpoint every N epochs  (0 = only best + last)
+  verbose:       false    # suppress per-batch ultralytics output
+
+# ---------------------------------------------------------------------------
+# Augmentation
+# ---------------------------------------------------------------------------
+# IMPORTANT for OBB tasks
+# ─────────────────────────────────────────────────────────────────────────────
+# Geometric augmentations (rotate, shear, perspective) are handled entirely
+# by YOLO's native pipeline, which correctly rotates the full 8-coordinate
+# OBB label.  DO NOT use Albumentations geometric transforms — they operate
+# on the 4-value [x, y, w, h] format and will corrupt OBB labels.
+# ─────────────────────────────────────────────────────────────────────────────
+augmentation:
+  # Photometric (safe for any label format)
+  hsv_h: 0.015    # hue shift fraction
+  hsv_s: 0.4      # saturation shift fraction
+  hsv_v: 0.3      # value (brightness) shift fraction
+
+  # Geometric — YOLO native (OBB-label-aware)
+  mosaic:       0.5     # mosaic probability  (1.0 = always on; effective for small datasets)
+  close_mosaic: 20      # disable mosaic for last N epochs to stabilise convergence
+  degrees:      180.0   # rotation range ± degrees  (180 = full rotation; critical for overhead imagery)
+  fliplr:       0.5     # horizontal flip probability
+  flipud:       0.5     # vertical   flip probability (valid for top-down satellite views)
+  scale:        0.0     # random scale ± fraction  (0 = disabled)
+  multi_scale:  0.0     # disabled — images are pre-upsampled to a fixed size;
+                        # re-scaling would undo that work.
+                        # If enabled, set to a float (e.g. 0.2), NOT a bool.
+  perspective:  0.0     # disabled — orthorectified satellite images have no
+                        # perspective distortion; this adds noise only.

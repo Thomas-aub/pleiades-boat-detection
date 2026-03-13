@@ -1,0 +1,80 @@
+# =============================================================================
+# configs/inference.yaml
+# =============================================================================
+# All parameters for the inference pipeline:
+#   scripts/predict.py → YoloPredictor → GlobalNMS → GeoJSONExporter
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  # Path to the trained checkpoint.  Typically the output of scripts/train.py.
+  weights: "runs/obb/boat_obb_v1/weights/best.pt"
+
+# ---------------------------------------------------------------------------
+# Inference (YoloPredictor)
+# ---------------------------------------------------------------------------
+inference:
+  # Confidence threshold — predictions below this score are discarded by YOLO
+  # before they even reach the postprocessing stage.
+  conf: 0.10
+
+  # NMS IoU threshold used by YOLO's *internal* per-tile NMS pass.
+  # This is NOT the global cross-tile NMS threshold (see postprocess below).
+  iou: 0.30
+
+  # Image size at inference time.  Must match the training imgsz and the
+  # output size of transforms.py.
+  imgsz: 640
+
+# ---------------------------------------------------------------------------
+# Input / Output paths
+# ---------------------------------------------------------------------------
+paths:
+  # Directory containing GeoTIFF tiles to run inference on.
+  # Can point at a specific split (e.g. data/processed/images/test) or any
+  # folder of GeoTIFF tiles.
+  tiles_dir: "data/processed/images/test"
+
+  # Where to write the final GeoJSON prediction file.
+  output_geojson: "predictions/boats_test.geojson"
+
+# ---------------------------------------------------------------------------
+# Global NMS (postprocess.GlobalNMS)
+# ---------------------------------------------------------------------------
+# Because adjacent tiles overlap, the same boat may be detected by two or
+# more tiles.  GlobalNMS removes cross-tile duplicates after projecting all
+# detections into a shared coordinate space.
+postprocess:
+  # IoU threshold for the *global* (cross-tile) NMS pass.
+  # Detections with IoU ≥ this value are considered duplicates; the lower-
+  # confidence one is suppressed.
+  # Typical range: 0.20 – 0.50.  Higher = more aggressive suppression.
+  global_nms_iou: 0.30
+
+# ---------------------------------------------------------------------------
+# GeoJSON export (geospatial.GeoJSONExporter)
+# ---------------------------------------------------------------------------
+export:
+  # JSON indentation for the output file.
+  # null = compact single-line JSON (smaller file).
+  # 2    = pretty-printed (easier to inspect / diff in git).
+  indent: 2
+
+# ---------------------------------------------------------------------------
+# Evaluation (used by scripts/predict.py when --eval flag is passed)
+# ---------------------------------------------------------------------------
+evaluation:
+  # Dataset YAML used to run model.val() for formal metric computation.
+  dataset_yaml: "data/dataset.yaml"
+
+  # Split to evaluate on.
+  split: "test"
+
+  # Final confidence threshold for the official val() call.
+  # May differ from inference.conf above.
+  final_conf: 0.10
+
+  # IoU threshold for the official val() call.
+  final_iou: 0.30
