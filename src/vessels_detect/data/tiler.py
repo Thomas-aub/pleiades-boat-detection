@@ -14,7 +14,7 @@ reconstruction — can derive all spatial context by opening the tile alone.
 
 Typical usage::
 
-    from src.data.tiler import ImageTiler, TilerConfig
+    from src.vessels_detect.data.tiler import ImageTiler, TilerConfig
 
     config = TilerConfig(tile_size=320, overlap=64)
     tiler  = ImageTiler(config)
@@ -35,7 +35,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import rasterio
 from rasterio.transform import Affine
+from rasterio.enums import Resampling
 from rasterio.windows import Window
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class TilerConfig:
     overlap: int = 64
     min_percentile: float = 1.0
     max_percentile: float = 99.0
+    gamma: float = 0.6
     bands: Optional[List[int]] = None
     compress: str = "lzw"
 
@@ -298,33 +301,11 @@ class ImageTiler:
         )
         return all_tile_paths
 
+    
     def tile_image(self, tif_path: Path, output_dir: Path) -> List[Path]:
-        """Tile a single GeoTIFF and return the paths of all written tiles.
-
-        Processing steps:
-            1. Read the full image into memory and select RGB bands.
-            2. Compute global percentile-stretch parameters (once per image
-               so every tile has a consistent colour rendering).
-            3. Slide a ``tile_size × tile_size`` window with stride
-               ``tile_size - overlap`` over the stretched image.
-            4. Skip uniform tiles (all pixels identical → nodata / ocean pad).
-            5. Zero-pad edge tiles to ``tile_size × tile_size``.
-            6. Write each patch as a georeferenced GeoTIFF with provenance tags.
-
-        Args:
-            tif_path: Path to the source GeoTIFF.
-            output_dir: Directory to write tile files into.
-
-        Returns:
-            List of :class:`~pathlib.Path` objects, one per tile written.
-
-        Raises:
-            rasterio.errors.RasterioIOError: If the source file cannot be
-                opened by rasterio.
-        """
+        """Tile a massive GeoTIFF using Global Percentile + Gamma stretching."""
         cfg    = self._cfg
         stride = cfg.tile_size - cfg.overlap
-
         tile_paths: List[Path] = []
 
         with rasterio.open(tif_path) as src:
@@ -332,36 +313,36 @@ class ImageTiler:
             n_bands   = src.count
             stem      = tif_path.stem
 
-            logger.info(
-                "  Source: %s  (%d × %d px, %d band(s), CRS: %s)",
-                tif_path.name, W, H, n_bands, src.crs,
-            )
+            logger.info("  Source: %s (%d × %d px, %d bands)", tif_path.name, W, H, n_bands)
 
-            # ----------------------------------------------------------
-            # 1. Read full image; select RGB bands.
-            # ----------------------------------------------------------
-            logger.debug("  Reading full image into memory …")
-            full_data = src.read()                                  # (B, H, W)
-            rgb_full  = _select_bands(full_data, n_bands, cfg.bands)  # (3, H, W)
-            del full_data
+            # =================================================================
+            # STEP 1: GLOBAL STRETCH CALCULATION (THUMBNAIL)
+            # =================================================================
+            thumb_scale = 1024 / max(W, H)
+            out_shape = (n_bands, max(int(H * thumb_scale), 1), max(int(W * thumb_scale), 1))
+            
+            thumbnail = src.read(out_shape=out_shape, resampling=Resampling.bilinear)
+            rgb_thumb = _select_bands(thumbnail, n_bands, cfg.bands)
+            
+            stretch_params: List[Tuple[float, float]] = []
+            for i in range(rgb_thumb.shape[0]):
+                band = rgb_thumb[i].astype(np.float32)
+                valid_pixels = band[band > 0] # Ignore black padding
+                
+                if len(valid_pixels) == 0:
+                    lo, hi = 0.0, 1.0
+                else:
+                    lo = float(np.percentile(valid_pixels, cfg.min_percentile))
+                    hi = float(np.percentile(valid_pixels, cfg.max_percentile))
+                    if hi <= lo: hi = lo + 1.0
+                    
+                stretch_params.append((lo, hi))
+                
+            del thumbnail, rgb_thumb # Free RAM
 
-            # ----------------------------------------------------------
-            # 2. Global percentile stretch → uint8 (applied to full img).
-            # ----------------------------------------------------------
-            logger.debug("  Computing global percentile stretch …")
-            rgb_uint8, stretch_params = _percentile_stretch(
-                rgb_full, cfg.min_percentile, cfg.max_percentile
-            )
-            del rgb_full
-
-            for i, (lo, hi) in enumerate(stretch_params):
-                logger.debug(
-                    "    Band %d: raw range [%.1f, %.1f]", i + 1, lo, hi
-                )
-
-            # ----------------------------------------------------------
-            # 3. Sliding window.
-            # ----------------------------------------------------------
+            # =================================================================
+            # STEP 2: STREAMING TILING & GAMMA CORRECTION
+            # =================================================================
             n_cols  = math.ceil(W / stride)
             n_rows  = math.ceil(H / stride)
             kept    = 0
@@ -375,56 +356,46 @@ class ImageTiler:
                     win_w = min(cfg.tile_size, W - x_off)
                     win_h = min(cfg.tile_size, H - y_off)
 
-                    # Slice from the already-stretched full image.
-                    tile_rgb = rgb_uint8[
-                        :, y_off : y_off + win_h, x_off : x_off + win_w
-                    ].copy()
+                    window = Window(x_off, y_off, win_w, win_h)
+                    raw_tile = src.read(window=window)
+                    tile_rgb = _select_bands(raw_tile, n_bands, cfg.bands)
 
-                    # --------------------------------------------------
-                    # 4. Skip uniform (empty / nodata) tiles.
-                    # --------------------------------------------------
                     if tile_rgb.min() == tile_rgb.max():
                         skipped += 1
                         continue
 
-                    # --------------------------------------------------
-                    # 5. Zero-pad edge tiles.
-                    # --------------------------------------------------
-                    tile_rgb = _pad_tile(tile_rgb, cfg.tile_size)
+                    # Apply Global Stretch + Gamma Correction
+                    out_tile = np.empty_like(tile_rgb, dtype=np.float32)
+                    for i in range(tile_rgb.shape[0]):
+                        lo, hi = stretch_params[i]
+                        band_float = tile_rgb[i].astype(np.float32)
+                        
+                        # 1. Normalize to 0.0 - 1.0
+                        s = (band_float - lo) / (hi - lo)
+                        s = np.clip(s, 0.0, 1.0)
+                        
+                        # 2. Apply Gamma curve
+                        s = np.power(s, cfg.gamma)
+                        
+                        # 3. Scale to 8-bit [1, 254]
+                        out_tile[i] = np.clip(s * 255.0, 1.0, 254.0)
+                    
+                    tile_rgb_uint8 = out_tile.astype(np.uint8)
+                    tile_rgb_uint8 = _pad_tile(tile_rgb_uint8, cfg.tile_size)
 
-                    # --------------------------------------------------
-                    # 6. Compute tile-specific affine transform.
-                    #    rasterio.window_transform correctly anchors the
-                    #    top-left corner of the window in the source CRS.
-                    # --------------------------------------------------
-                    window         = Window(x_off, y_off, win_w, win_h)
                     tile_transform = src.window_transform(window)
+                    profile = _build_output_profile(src, tile_transform, cfg.tile_size, cfg.compress)
 
-                    profile = _build_output_profile(
-                        src, tile_transform, cfg.tile_size, cfg.compress
-                    )
-
-                    tile_name = f"{stem}_{x_off}_{y_off}.tif"
-                    out_path  = output_dir / tile_name
-
+                    out_path = output_dir / f"{stem}_{x_off}_{y_off}.tif"
                     with rasterio.open(out_path, "w", **profile) as dst:
-                        dst.write(tile_rgb)
+                        dst.write(tile_rgb_uint8)
                         dst.update_tags(
-                            source_tif=tif_path.name,
-                            col_off=str(x_off),
-                            row_off=str(y_off),
-                            src_width=str(W),
-                            src_height=str(H),
-                            tile_size=str(cfg.tile_size),
+                            source_tif=tif_path.name, col_off=str(x_off), row_off=str(y_off),
+                            src_width=str(W), src_height=str(H), tile_size=str(cfg.tile_size)
                         )
 
                     tile_paths.append(out_path)
                     kept += 1
 
-            del rgb_uint8
-
-        logger.info(
-            "  → %d tile(s) saved, %d uniform tile(s) skipped.",
-            kept, skipped,
-        )
+        logger.info("  → %d tile(s) saved, %d uniform skipped.", kept, skipped)
         return tile_paths

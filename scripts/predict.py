@@ -33,10 +33,11 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from src.utils.config import load_config, Config
-from src.inference.predictor import YoloPredictor
-from src.inference.postprocess import GlobalNMS
-from src.inference.geospatial import GeoJSONExporter
+from src.vessels_detect.utils.config import load_config, Config
+from src.vessels_detect.inference.predictor import YoloPredictor
+from src.vessels_detect.inference.postprocess import GlobalNMS
+from src.vessels_detect.inference.geospatial import GeoJSONExporter
+from src.vessels_detect.inference.filters import CoastlineFilter
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +122,9 @@ def _run_formal_eval(cfg: Config, predictor: YoloPredictor) -> None:
 
     Args:
         cfg: The full inference config.
-        predictor: An already-loaded :class:`~src.inference.predictor.YoloPredictor`.
+        predictor: An already-loaded :class:`~src.vessels_detect.inference.predictor.YoloPredictor`.
     """
-    from src.evaluation.metrics import compute_per_class_metrics
+    from src.vessels_detect.evaluation.metrics import compute_per_class_metrics
 
     eval_cfg      = cfg.evaluation
     dataset_yaml  = str(eval_cfg.get("dataset_yaml", "data/dataset.yaml"))
@@ -235,6 +236,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as exc:
         logger.critical("Global NMS failed: %s", exc, exc_info=True)
         return 1
+
+    # ── Stage 2.5: Coastline Filtering (NEW) ──────────────────────────
+    mask_path_str = cfg.postprocess.get("valid_area_mask", None)
+    if mask_path_str:
+        logger.info("=" * 60)
+        logger.info("Stage 2.5 — Coastline Filtering")
+        logger.info("=" * 60)
+        try:
+            # Don't forget to import CoastlineFilter at the top of the file!
+            coast_filter = CoastlineFilter(Path(mask_path_str))
+            kept_dets = coast_filter.run(kept_dets)
+        except Exception as exc:
+            logger.critical("Coastline filtering failed: %s", exc, exc_info=True)
+            return 1
+
+    # ── Stage 3: GeoJSON export ───────────────────────────────────────
+    logger.info("=" * 60)
+    logger.info("Stage 3 — GeoJSON Export")
+    logger.info("=" * 60)
+    indent = cfg.export.get("indent", 2)
 
     # ── Stage 3: GeoJSON export ───────────────────────────────────────
     logger.info("=" * 60)

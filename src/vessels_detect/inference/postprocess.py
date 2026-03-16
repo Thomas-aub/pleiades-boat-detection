@@ -45,7 +45,7 @@ import cv2
 import numpy as np
 from rasterio.transform import Affine
 
-from src.inference.predictor import TilePrediction
+from src.vessels_detect.inference.predictor import TilePrediction
 
 logger = logging.getLogger(__name__)
 

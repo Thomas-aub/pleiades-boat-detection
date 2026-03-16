@@ -30,6 +30,10 @@ Per-class metrics
 Detection matching
     :func:`match_detections` — greedy IoU-based TP / FP / FN assignment.
     :func:`compute_crop_metrics` — precision / recall / F1 from TP/FP/FN counts.
+
+Systematic counting bias
+    :func:`calculate_counting_bias` — signed percentage bias (ΣPred−ΣGT)/ΣGT×100.
+    :func:`build_bias_dataframe`    — per-class bias summary DataFrame.
 """
 
 from __future__ import annotations
@@ -327,6 +331,7 @@ def build_distribution_dataframe(
 # § 4  Per-class performance metrics
 # =============================================================================
 
+ 
 def compute_per_class_metrics(
     metrics_obj: Any,
     class_names: Dict[int, str],
@@ -334,23 +339,38 @@ def compute_per_class_metrics(
     test_split: str = "test",
 ) -> pd.DataFrame:
     """Build the per-class P / R / F1 / mAP50 / mAP50-95 table.
-
+ 
+    YOLO's ``box.p``, ``box.r``, ``box.maps``, and ``box.ap50`` are
+    *positional* arrays whose length equals the number of classes that
+    actually appeared in the evaluation split — **not** the total number of
+    classes in the dataset.  The companion array ``box.ap_class_index``
+    maps each position back to its true class ID.
+ 
+    Classes absent from the evaluation split receive ``NaN`` for all metric
+    columns and ``0`` for Support.  They are included in the table so the
+    caller always gets one row per class regardless of split coverage.
+ 
     Args:
         metrics_obj: The ``ultralytics`` metrics object returned by
             ``model.val()``.  Must expose ``metrics_obj.box`` with
-            attributes ``p``, ``r``, ``maps``, ``ap50``, ``mp``, ``mr``,
-            ``map50``, ``map``.
-        class_names: ``{class_id: class_name}`` mapping.
-        labels_root: Root of the labels directory (for Support count).
-        test_split: Split to count ground-truth support from.
-
+            attributes ``p``, ``r``, ``maps``, ``ap_class_index``,
+            ``mp``, ``mr``, ``map50``, ``map``.
+        class_names: ``{class_id: class_name}`` mapping for **all** classes
+            in the dataset (not just those present in the split).
+        labels_root: Root of the labels directory tree; used to count
+            ground-truth Support instances in *test_split*.
+        test_split: Name of the split sub-directory to count GT from
+            (default ``"test"``).
+ 
     Returns:
         DataFrame with columns:
         ``Class``, ``Support``, ``Precision``, ``Recall``, ``F1-score``,
         ``mAP50``, ``mAP50-95``.
-        A ``**Global**`` row is appended at the end.
+        Rows are sorted by ``mAP50-95`` descending; a ``**Global**`` row
+        (macro-averaged over evaluated classes) is appended at the end.
+        Classes absent from the split show ``NaN`` in metric columns.
     """
-    # Ground-truth support counts.
+    # ── Ground-truth support counts ───────────────────────────────────────
     gt_counts: Counter[int] = Counter()
     test_dir = labels_root / test_split
     if test_dir.exists():
@@ -359,47 +379,93 @@ def compute_per_class_metrics(
                 ln = ln.strip()
                 if ln:
                     gt_counts[int(ln.split()[0])] += 1
-
-    support = [gt_counts.get(i, 0) for i in range(len(class_names))]
-
+    else:
+        logger.warning(
+            "compute_per_class_metrics: label directory '%s' not found; "
+            "Support will be 0 for all classes.",
+            test_dir,
+        )
+ 
+    # ── Build a {class_id → array_position} lookup from YOLO's index array ──
+    # ``box.ap_class_index`` is a 1-D array of the class IDs that were
+    # actually evaluated, in the same order as ``box.p`` / ``box.r`` / etc.
     box = metrics_obj.box
-    ap50_arr = box.ap50 if hasattr(box, "ap50") else [float("nan")] * len(class_names)
-
-    rows = []
+ 
+    if hasattr(box, "ap_class_index") and box.ap_class_index is not None:
+        evaluated_ids: List[int] = [int(x) for x in box.ap_class_index]
+    else:
+        # Fallback for older ultralytics builds that lack ap_class_index:
+        # assume the arrays cover class IDs 0 … len(box.p)-1 in order.
+        logger.warning(
+            "compute_per_class_metrics: 'box.ap_class_index' not found; "
+            "falling back to positional assumption (0 … %d). "
+            "Upgrade ultralytics to avoid this.",
+            len(box.p) - 1,
+        )
+        evaluated_ids = list(range(len(box.p)))
+ 
+    # {class_id: position_in_metric_arrays}
+    cid_to_pos: Dict[int, int] = {cid: pos for pos, cid in enumerate(evaluated_ids)}
+ 
+    ap50_arr: Any = box.ap50 if hasattr(box, "ap50") else None
+ 
+    # ── Per-class rows ────────────────────────────────────────────────────
+    rows: List[Dict[str, Any]] = []
     for cid, name in class_names.items():
-        p  = float(box.p[cid])
-        r  = float(box.r[cid])
+        support = gt_counts.get(cid, 0)
+        pos     = cid_to_pos.get(cid)          # None if class absent from split
+ 
+        if pos is None:
+            # Class present in the dataset but not in this evaluation split.
+            logger.debug(
+                "compute_per_class_metrics: class %d ('%s') absent from "
+                "the '%s' split — metrics set to NaN.",
+                cid, name, test_split,
+            )
+            rows.append({
+                "Class":     name,
+                "Support":   support,
+                "Precision": float("nan"),
+                "Recall":    float("nan"),
+                "F1-score":  float("nan"),
+                "mAP50":     float("nan"),
+                "mAP50-95":  float("nan"),
+            })
+            continue
+ 
+        p  = float(box.p[pos])
+        r  = float(box.r[pos])
         f1 = 2 * p * r / (p + r + 1e-9)
         rows.append({
             "Class":     name,
-            "Support":   support[cid],
+            "Support":   support,
             "Precision": p,
             "Recall":    r,
             "F1-score":  f1,
-            "mAP50":     float(ap50_arr[cid]),
-            "mAP50-95":  float(box.maps[cid]),
+            "mAP50":     float(ap50_arr[pos]) if ap50_arr is not None else float("nan"),
+            "mAP50-95":  float(box.maps[pos]),
         })
-
+ 
+    # ── Global row (ultralytics macro-average over evaluated classes) ──────
     p_g, r_g = float(box.mp), float(box.mr)
     rows.append({
         "Class":     "**Global**",
-        "Support":   sum(support),
+        "Support":   sum(gt_counts.values()),
         "Precision": p_g,
         "Recall":    r_g,
         "F1-score":  2 * p_g * r_g / (p_g + r_g + 1e-9),
         "mAP50":     float(box.map50),
         "mAP50-95":  float(box.map),
     })
-
+ 
     df = pd.DataFrame(rows)
     df = pd.concat([
         df[df["Class"] != "**Global**"].sort_values("mAP50-95", ascending=False),
         df[df["Class"] == "**Global**"],
     ]).reset_index(drop=True)
-
+ 
     return df.round(4)
-
-
+ 
 def compute_confusion_matrix(
     metrics_obj: Any,
     class_names: Dict[int, str],
@@ -534,3 +600,177 @@ def build_crop_summary(
         .sort_values(["category", "class"])
         .reset_index(drop=True)
     )
+
+
+# =============================================================================
+# § 6  Systematic Counting Bias
+# =============================================================================
+
+def calculate_counting_bias(
+    pred_counts: list[int],
+    gt_counts: list[int],
+) -> float:
+    """Compute the Systematic Counting Bias as a percentage.
+
+    Measures whether the model *systematically* over- or under-counts a
+    class across the dataset by comparing aggregate totals — not per-image
+    errors.  A single number answers the practical question: *"Does my
+    inventory counter produce the right total?"*
+
+    The formula is::
+
+        Bias (%) = ((ΣPredicted − ΣGroundTruth) / ΣGroundTruth) × 100
+
+    Interpretation:
+
+    - **Negative value** → systematic *undercounting*
+      (e.g. ``−15.0`` means the model predicts 15 % fewer objects than
+      actually exist; the confidence threshold may be too high or the
+      class is hard to detect).
+    - **Positive value** → systematic *overcounting*
+      (e.g. ``+5.2`` means the model predicts 5.2 % more objects than
+      actually exist; likely caused by duplicate detections or a low
+      confidence threshold).
+    - **Zero** → the model's raw counts are well-calibrated in aggregate
+      (individual image counts may still be noisy).
+
+    Division-by-zero policy:
+
+    - ``ΣGT == 0`` and ``ΣPred == 0`` → returns ``0.0`` (no objects, no
+      error).
+    - ``ΣGT == 0`` and ``ΣPred  > 0`` → returns ``float('inf')`` (the class
+      is absent from the split but the model hallucinates detections; the
+      bias is unbounded by definition).
+
+    Args:
+        pred_counts: Flat list of predicted object counts, one integer per
+            image.  Each element must be non-negative.  The list must be
+            aligned with *gt_counts* (same image order, same length).
+        gt_counts:   Flat list of ground-truth object counts, one integer per
+            image.  Each element must be non-negative.
+
+    Returns:
+        Percentage bias as a :class:`float`.  Negative values indicate
+        undercounting; positive values indicate overcounting.
+        Returns ``float('inf')`` when ``ΣGT == 0`` and ``ΣPred > 0``.
+        Returns ``0.0`` when both totals are zero.
+
+    Raises:
+        ValueError: If *pred_counts* and *gt_counts* have different lengths.
+        ValueError: If either list contains a negative value.
+
+    Examples:
+        >>> calculate_counting_bias([8, 5, 3], [10, 5, 5])   # under
+        -20.0
+        >>> calculate_counting_bias([11, 5, 5], [10, 5, 5])  # over
+        +5.0 (approximately)
+        >>> calculate_counting_bias([0, 0], [0, 0])
+        0.0
+        >>> calculate_counting_bias([3, 2], [0, 0])
+        inf
+    """
+    if len(pred_counts) != len(gt_counts):
+        raise ValueError(
+            f"pred_counts and gt_counts must have the same length, "
+            f"got {len(pred_counts)} vs {len(gt_counts)}."
+        )
+    if any(v < 0 for v in pred_counts):
+        raise ValueError("pred_counts contains a negative value.")
+    if any(v < 0 for v in gt_counts):
+        raise ValueError("gt_counts contains a negative value.")
+
+    total_pred: int = sum(pred_counts)
+    total_gt:   int = sum(gt_counts)
+
+    if total_gt == 0:
+        return 0.0 if total_pred == 0 else float("inf")
+
+    return ((total_pred - total_gt) / total_gt) * 100.0
+
+
+def build_bias_dataframe(
+    gt_counts_per_class:   dict[int, list[int]],
+    pred_counts_per_class: dict[int, list[int]],
+    class_names:           dict[int, str],
+) -> pd.DataFrame:
+    """Aggregate per-class counting bias into a tidy summary DataFrame.
+
+    Iterates over every class present in *gt_counts_per_class*, calls
+    :func:`calculate_counting_bias`, and assembles a table suitable for
+    direct display or export.
+
+    The ``Bias (%)`` column is formatted as a signed string with one decimal
+    place and a ``%`` suffix (e.g. ``"+5.2%"``, ``"-15.0%"``, ``"0.0%"``,
+    ``"inf"``), so the sign is always explicit and the column is
+    human-readable without further transformation.
+
+    An ``"All Classes"`` aggregate row is appended at the end, computed
+    from the concatenation of all per-class lists.
+
+    Args:
+        gt_counts_per_class:   Mapping ``{class_id: [gt_count_per_image]}``.
+            Every image that belongs to the evaluation split should have an
+            entry (zero if the class is absent in that image).
+        pred_counts_per_class: Mapping ``{class_id: [pred_count_per_image]}``,
+            aligned with *gt_counts_per_class* (same image order per class).
+        class_names:           Mapping ``{class_id: class_name}`` for the
+            human-readable ``"Class"`` column.
+
+    Returns:
+        :class:`~pandas.DataFrame` with columns:
+
+        =================  ================================================
+        ``Class``          Human-readable class name (or ``"class_<id>"``).
+        ``Total GT``       Sum of all GT counts across images for this class.
+        ``Total Pred``     Sum of all predicted counts.
+        ``Bias (%)``       Signed percentage string, e.g. ``"+5.2%"``.
+        =================  ================================================
+
+        Rows are sorted by ``Total GT`` descending.  The ``"All Classes"``
+        aggregate row is always last.
+    """
+    rows: list[dict] = []
+
+    for cid in sorted(gt_counts_per_class.keys()):
+        gt_list   = gt_counts_per_class[cid]
+        pred_list = pred_counts_per_class.get(cid, [0] * len(gt_list))
+        bias      = calculate_counting_bias(pred_list, gt_list)
+
+        if bias == float("inf"):
+            bias_str = "inf"
+        else:
+            sign = "+" if bias >= 0 else ""
+            bias_str = f"{sign}{bias:.1f}%"
+
+        rows.append({
+            "Class":      class_names.get(cid, f"class_{cid}"),
+            "Total GT":   int(sum(gt_list)),
+            "Total Pred": int(sum(pred_list)),
+            "Bias (%)":   bias_str,
+        })
+
+    # ── Aggregate "All Classes" row ───────────────────────────────────────
+    all_gt   = [v for lst in gt_counts_per_class.values()   for v in lst]
+    all_pred = [v for lst in pred_counts_per_class.values() for v in lst]
+    bias_all = calculate_counting_bias(all_pred, all_gt)
+
+    if bias_all == float("inf"):
+        bias_all_str = "inf"
+    else:
+        sign = "+" if bias_all >= 0 else ""
+        bias_all_str = f"{sign}{bias_all:.1f}%"
+
+    df = (
+        pd.DataFrame(rows)
+        .sort_values("Total GT", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    global_row = pd.DataFrame([{
+        "Class":      "All Classes",
+        "Total GT":   int(sum(all_gt)),
+        "Total Pred": int(sum(all_pred)),
+        "Bias (%)":   bias_all_str,
+    }])
+
+    return pd.concat([df, global_row], ignore_index=True)

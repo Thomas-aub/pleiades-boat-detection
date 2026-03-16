@@ -1,5 +1,5 @@
 """
-src/vessels_detect/data/annotations.py
+src/data/annotations.py
 ------------------------
 Converts raw GeoJSON oriented bounding-box (OBB) boat annotations into
 YOLO OBB ``.txt`` label files, one file per GeoTIFF tile.
@@ -14,7 +14,7 @@ Coordinate flow per annotation:
     3. Project to tile's native CRS with pyproj →
     4. Apply inverse tile Affine → pixel-space (col, row) →
     5. Enforce minimum side-length →
-    6. Normalise to [0, 1] relative to ``tile_size`` →
+    6. Normalise to [0, 1] relative to ``tile_size``, clamping boundary corners →
     7. Write YOLO OBB format:  ``class_id x1 y1 x2 y2 x3 y3 x4 y4``
 
 One ``.txt`` is written for every tile even when it contains no
@@ -216,16 +216,32 @@ def _enforce_min_side(
 
 
 def _normalise(corners_px: List[Tuple[float, float]], tile_size: int) -> List[Tuple[float, float]]:
-    """Normalise pixel coordinates to the [0, 1] range.
+    """Normalise pixel coordinates to the [0, 1] range, clamping at the boundary.
+
+    Coordinates are divided by *tile_size* and then clamped to ``[0, 1]``.
+    Clamping is required for annotations that straddle the tile edge: their
+    corners may project to pixel values slightly below 0 or above *tile_size*
+    because the GeoTIFF tiler zero-pads edges rather than hard-cropping them.
+    The ``min_visible`` check in :meth:`AnnotationConverter._convert_tile`
+    already guarantees that only annotations with sufficient visible area
+    reach this step, so clamping is always the correct action — YOLO simply
+    needs every coordinate to be a valid normalised fraction.
 
     Args:
-        corners_px: Four ``(x, y)`` pixel-space tuples.
+        corners_px: Four ``(x, y)`` pixel-space tuples.  Values outside
+            ``[0, tile_size]`` are accepted and will be clamped.
         tile_size: Tile edge length in pixels (same for width and height).
 
     Returns:
-        Four ``(x_norm, y_norm)`` tuples, each in [0, 1].
+        Four ``(x_norm, y_norm)`` tuples, each strictly in ``[0.0, 1.0]``.
     """
-    return [(x / tile_size, y / tile_size) for x, y in corners_px]
+    return [
+        (
+            max(0.0, min(1.0, x / tile_size)),
+            max(0.0, min(1.0, y / tile_size)),
+        )
+        for x, y in corners_px
+    ]
 
 
 def _to_yolo_line(class_id: int, corners: List[Tuple[float, float]]) -> str:

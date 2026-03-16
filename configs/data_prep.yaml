@@ -23,8 +23,9 @@ paths:
 tiling:
   tile_size:       320      # tile width AND height in pixels
   overlap:         64       # pixel overlap between adjacent tiles  (0 = none)
-  min_percentile:  1.0      # lower percentile for global contrast stretching
-  max_percentile:  99.0     # upper percentile for global contrast stretching
+  min_percentile:  1.0      # lower percentile for  contrast stretching
+  max_percentile:  99.0     # upper percentile for contrast stretching
+  gamma: 0.6
 
   # 1-based band indices to use as (R, G, B).
   # null = auto-detect:  ≥3 bands → first 3;  1 band (PAN) → replicate to RGB.
@@ -35,6 +36,7 @@ tiling:
   # "lzw" (lossless, fast decode) is a good default for uint8 imagery.
   compress: "lzw"
 
+
 # ---------------------------------------------------------------------------
 # Step 2 — Annotation conversion (src/data/annotations.py)
 # ---------------------------------------------------------------------------
@@ -44,7 +46,7 @@ annotations:
 
   # Minimum fraction of an OBB's area that must be visible inside the tile
   # for the annotation to be included.  Range: (0.0, 1.0].
-  min_visible: 0.25
+  min_visible: 0.10
 
   # Minimum OBB side length in pixels.  Boxes smaller than this on either
   # axis are symmetrically elongated from their centre to reach this size.
@@ -70,8 +72,10 @@ annotations:
 split:
   # Fractions must sum to 1.0.
   train_ratio: 0.70
-  val_ratio:   0.20
-  test_ratio:  0.10
+  val_ratio:   0.15
+  test_ratio:  0.15
+  priority_class_ids: [0, 1]   # Pirogue, Double_hulled_Pirogue
+  priority_weight: 3.0          # increase → more aggressively balance these classes
 
   # Fixed seed guarantees reproducible splits across runs.
   random_seed: 42
@@ -82,7 +86,7 @@ split:
 balance:
   # Target fraction of the final split that should be background tiles.
   # e.g. 0.10 → 10 % background, 90 % annotated.
-  background_ratio: 0.10
+  background_ratio: 0.80
 
   random_seed: 42
 
@@ -109,5 +113,5 @@ transforms:
   # Number of parallel worker processes.  null = all logical CPU cores.
   max_workers: null
 
-  # Only these splits are upsampled; "test" keeps its original resolution.
-  apply_to_splits: ["train", "val"]
+  # Only these splits are upsampled; "
+  apply_to_splits: ["train", "val", "test"]

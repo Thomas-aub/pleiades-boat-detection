@@ -52,6 +52,7 @@ postprocess:
   # confidence one is suppressed.
   # Typical range: 0.20 – 0.50.  Higher = more aggressive suppression.
   global_nms_iou: 0.30
+  valid_area_mask: None
 
 # ---------------------------------------------------------------------------
 # GeoJSON export (geospatial.GeoJSONExporter)

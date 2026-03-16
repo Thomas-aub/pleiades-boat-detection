@@ -44,7 +44,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import Affine
 
-from src.utils.config import Config
+from src.vessels_detect.utils.config import Config
 
 logger = logging.getLogger(__name__)
 

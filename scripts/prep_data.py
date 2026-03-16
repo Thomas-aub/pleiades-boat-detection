@@ -145,7 +145,7 @@ def _stage_1_tiling(cfg: dict) -> None:
     Args:
         cfg: Full configuration dictionary.
     """
-    from src.data.tiler import ImageTiler, TilerConfig
+    from src.vessels_detect.data.tiler import ImageTiler, TilerConfig
 
     logger.info("=" * 70)
     logger.info("STAGE 1 — Tiling")
@@ -170,7 +170,7 @@ def _stage_2_annotations(cfg: dict) -> None:
     Args:
         cfg: Full configuration dictionary.
     """
-    from src.data.annotations import AnnotationConverter, AnnotationConfig
+    from src.vessels_detect.data.annotations import AnnotationConverter, AnnotationConfig
 
     logger.info("=" * 70)
     logger.info("STAGE 2 — Annotation Conversion")
@@ -196,7 +196,7 @@ def _stage_3_split(cfg: dict) -> None:
     Args:
         cfg: Full configuration dictionary.
     """
-    from src.data.split import DatasetSplitter, SplitConfig
+    from src.vessels_detect.data.split import DatasetSplitter, SplitConfig
 
     logger.info("=" * 70)
     logger.info("STAGE 3 — Train / Val / Test Split")
@@ -227,7 +227,7 @@ def _stage_4_balance(cfg: dict) -> None:
     Args:
         cfg: Full configuration dictionary.
     """
-    from src.data.split import BackgroundBalancer, BalanceConfig
+    from src.vessels_detect.data.split import BackgroundBalancer, BalanceConfig
 
     logger.info("=" * 70)
     logger.info("STAGE 4 — Background Balancing")
@@ -257,7 +257,7 @@ def _stage_5_upsample(cfg: dict) -> None:
     Args:
         cfg: Full configuration dictionary.
     """
-    from src.data.transforms import ImageUpsampler, UpsampleConfig
+    from src.vessels_detect.data.transforms import ImageUpsampler, UpsampleConfig
 
     logger.info("=" * 70)
     logger.info("STAGE 5 — Upsampling")

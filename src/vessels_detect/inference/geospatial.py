@@ -42,7 +42,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pyproj
 
-from src.inference.postprocess import GlobalDetection
+from src.vessels_detect.inference.postprocess import GlobalDetection
 
 logger = logging.getLogger(__name__)
 

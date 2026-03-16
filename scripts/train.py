@@ -4,7 +4,7 @@ scripts/train.py
 -----------------
 Entry-point for YOLO-OBB boat-detection model training.
 
-Reads ``configs/train.yaml``, instantiates :class:`~src.models.yolo_trainer.YoloTrainer`,
+Reads ``configs/train.yaml``, instantiates :class:`~src.vessels_detect.models.yolo_trainer.YoloTrainer`,
 and starts the training run.  All hyperparameters are driven by the YAML;
 no values are hardcoded here.
 
@@ -27,8 +27,8 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from src.utils.config import load_config
-from src.models.yolo_trainer import YoloTrainer
+from src.vessels_detect.utils.config import load_config
+from src.vessels_detect.models.yolo_trainer import YoloTrainer
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def _parse_overrides(raw: List[str]) -> dict:
             to indicate nesting (e.g. ``"training.epochs=50"``).
 
     Returns:
-        A nested dictionary suitable for :meth:`~src.utils.config.Config.merge`.
+        A nested dictionary suitable for :meth:`~src.vessels_detect.utils.config.Config.merge`.
     """
     overrides: dict = {}
     for item in raw:

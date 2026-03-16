@@ -5,7 +5,7 @@ Encapsulates all YOLO-OBB training logic in a single, testable class.
 
 Replaces the flat script ``06_model.py`` and removes every hardcoded
 hyperparameter.  All configuration is injected at construction time via a
-:class:`~src.utils.config.Config` object that is loaded from
+:class:`~src.vessels_detect.utils.config.Config` object that is loaded from
 ``configs/train.yaml`` by the ``scripts/train.py`` entry-point.
 
 Design decisions
@@ -23,8 +23,8 @@ Design decisions
 
 Typical usage::
 
-    from src.utils.config import load_config
-    from src.models.yolo_trainer import YoloTrainer
+    from src.vessels_detect.utils.config import load_config
+    from src.vessels_detect.models.yolo_trainer import YoloTrainer
 
     cfg     = load_config("configs/train.yaml")
     trainer = YoloTrainer(cfg)
@@ -37,7 +37,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from src.utils.config import Config
+from src.vessels_detect.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class YoloTrainer:
     in testing or interactive sessions.
 
     Args:
-        config: A :class:`~src.utils.config.Config` loaded from
+        config: A :class:`~src.vessels_detect.utils.config.Config` loaded from
             ``configs/train.yaml``.  The expected structure is described
             in the YAML file itself.
 

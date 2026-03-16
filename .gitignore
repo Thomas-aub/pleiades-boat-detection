@@ -1,0 +1,56 @@
+# Ignore common Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg-info
+.tox/
+.mypy_cache/
+.pytest_cache/
+.vscode/
+
+# Ignore data files
+*.tif
+*.tif.aux.xml
+*/data/*
+*/tiles/*
+*/tiles/
+tiles/
+tiles/*
+*/results/*
+/results/*
+/data/*
+*/data
+/asset/*
+/asset
+*/asset/*
+*/asset
+*.pt
+*.npy
+*.geojson
+
+*.png
+boat_obb_v*/
+
+runs/
+crops/ 
+crops/*
+
+runs/*
+
+# Ignore results and runs
+*/results/
+*/runs/
+*/results/
+
+# Ignore logs
+*.log
+
+# Environment variables
+.env
+.flaskenv
+
+

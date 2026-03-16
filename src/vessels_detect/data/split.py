@@ -1,6 +1,6 @@
 """
 src/vessels_detect/data/split.py
------------------
+---------------------------------
 Splits tiles into train / val / test partitions with zero spatial leakage,
 then optionally balances background (empty) tiles within each partition.
 
@@ -12,7 +12,24 @@ then optionally balances background (empty) tiles within each partition.
     from a given source ends up in exactly one partition.
 
     The source image is identified from the ``source_tif`` TIFF tag written
-    by :mod:`src.data.tiler` — no filename parsing is required.
+    by :mod:`src.vessels_detect.data.tiler` — no filename parsing is required.
+
+**Class-Aware Assignment (replaces random shuffle)**
+    A naive random shuffle of source images systematically violates target
+    class ratios when annotations are unevenly distributed across source
+    TIFs (e.g. most Double_hulled_Pirogue tiles coming from a single flight
+    line).  The new algorithm uses a **deficit-weighted greedy assignment**:
+
+    1.  Build a per-source annotation profile (class → count) by scanning
+        ``labels_raw_dir`` *before* moving any files.
+    2.  Process sources in descending order of priority-class count
+        (Pirogue, Double_hulled_Pirogue by default) so the most
+        class-constraining sources are assigned first.
+    3.  For each source, score every eligible split by how much assigning
+        that source would close the per-class deficit, weighted by class
+        priority.  Assign to the highest-scoring split.
+    4.  Capacity caps (derived from the requested ratios) prevent all
+        sources from collapsing into train.
 
 **Background Balancing**
     Satellite imagery of open water produces a large number of empty tiles.
@@ -22,10 +39,10 @@ then optionally balances background (empty) tiles within each partition.
 
 Typical usage::
 
-    from src.data.split import DatasetSplitter, SplitConfig
-    from src.data.split import BackgroundBalancer, BalanceConfig
+    from src.vessels_detect.data.split import DatasetSplitter, SplitConfig
+    from src.vessels_detect.data.split import BackgroundBalancer, BalanceConfig
 
-    splitter = DatasetSplitter(SplitConfig(train_ratio=0.7, val_ratio=0.2))
+    splitter = DatasetSplitter(SplitConfig(train_ratio=0.70, val_ratio=0.15))
     splitter.split(
         tiles_dir=Path("data/processed/tiles"),
         labels_raw_dir=Path("data/processed/labels_raw"),
@@ -49,11 +66,20 @@ import random
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import rasterio
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Default priority: rarest / most important classes first.
+# Class IDs follow the dataset.yaml mapping:
+#   0 Pirogue  1 Double_hulled_Pirogue  2 Small_Motorboat
+#   3 Medium_Motorboat  4 Large_Motorboat  5 Sailing_Boat
+# ---------------------------------------------------------------------------
+_DEFAULT_PRIORITY_CLASS_IDS: List[int] = [0, 1]
+_DEFAULT_PRIORITY_WEIGHT:    float     = 4.0   # extra weight for priority classes
 
 
 # ---------------------------------------------------------------------------
@@ -65,23 +91,43 @@ class SplitConfig:
     """Hyperparameters for :class:`DatasetSplitter`.
 
     Attributes:
-        train_ratio: Fraction of source images assigned to the training set.
-        val_ratio: Fraction assigned to the validation set.
-        test_ratio: Fraction assigned to the test set.
-            The three ratios must sum to 1.0 within floating-point tolerance.
-        random_seed: Seed for reproducible shuffling of source images.
+        train_ratio: Fraction of *annotation instances* targeting the
+            training set.  Assignment is performed at source-image
+            granularity, so the achieved fraction will be approximate.
+        val_ratio: Target fraction for the validation set.
+        test_ratio: Target fraction for the test set.
+            The three ratios must sum to 1.0 within floating-point
+            tolerance.
+        random_seed: Seed used when breaking ties between equally-scored
+            splits and when shuffling background-only sources.
+        priority_class_ids: Class IDs that receive extra weight in the
+            deficit scoring function.  Defaults to [0, 1] (Pirogue and
+            Double_hulled_Pirogue).
+        priority_weight: Multiplicative weight applied to priority classes
+            in the scoring function.  Values between 2 and 6 work well;
+            higher = more aggressively balance those classes at the expense
+            of the others.
     """
 
-    train_ratio: float = 0.70
-    val_ratio: float   = 0.20
-    test_ratio: float  = 0.10
-    random_seed: int   = 42
+    train_ratio:        float     = 0.70
+    val_ratio:          float     = 0.15
+    test_ratio:         float     = 0.15
+    random_seed:        int       = 42
+    priority_class_ids: List[int] = field(
+        default_factory=lambda: list(_DEFAULT_PRIORITY_CLASS_IDS)
+    )
+    priority_weight:    float     = _DEFAULT_PRIORITY_WEIGHT
 
     def __post_init__(self) -> None:
         total = self.train_ratio + self.val_ratio + self.test_ratio
         if abs(total - 1.0) > 1e-6:
             raise ValueError(
-                f"train_ratio + val_ratio + test_ratio must equal 1.0, got {total:.6f}."
+                f"train_ratio + val_ratio + test_ratio must equal 1.0, "
+                f"got {total:.6f}."
+            )
+        if self.priority_weight < 1.0:
+            raise ValueError(
+                f"priority_weight must be ≥ 1.0, got {self.priority_weight}."
             )
 
     @classmethod
@@ -96,9 +142,13 @@ class SplitConfig:
         """
         return cls(
             train_ratio=cfg.get("train_ratio", 0.70),
-            val_ratio=cfg.get("val_ratio", 0.20),
-            test_ratio=cfg.get("test_ratio", 0.10),
+            val_ratio=cfg.get("val_ratio", 0.15),
+            test_ratio=cfg.get("test_ratio", 0.15),
             random_seed=cfg.get("random_seed", 42),
+            priority_class_ids=cfg.get(
+                "priority_class_ids", list(_DEFAULT_PRIORITY_CLASS_IDS)
+            ),
+            priority_weight=cfg.get("priority_weight", _DEFAULT_PRIORITY_WEIGHT),
         )
 
 
@@ -115,7 +165,7 @@ class BalanceConfig:
     """
 
     background_ratio: float = 0.10
-    random_seed: int        = 42
+    random_seed:      int   = 42
 
     def __post_init__(self) -> None:
         if not 0.0 < self.background_ratio < 1.0:
@@ -140,21 +190,19 @@ class BalanceConfig:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers — I/O
 # ---------------------------------------------------------------------------
 
 def _read_source_tag(tile_path: Path) -> str:
-    """Read the ``source_tif`` TIFF tag written by :mod:`src.data.tiler`.
+    """Read the ``source_tif`` TIFF tag written by the tiler.
 
-    Falls back to the full tile stem (e.g. ``scene_001_320_640``) when the
-    tag is absent, which is safe for single-image datasets.
+    Falls back to the tile stem when the tag is absent.
 
     Args:
         tile_path: Path to a GeoTIFF tile.
 
     Returns:
-        The ``source_tif`` tag value (typically the basename of the original
-        ``.tif``, e.g. ``"scene_001.tif"``), or the tile stem on failure.
+        The ``source_tif`` tag value, or the tile stem on failure.
     """
     try:
         with rasterio.open(tile_path) as ds:
@@ -167,10 +215,6 @@ def _read_source_tag(tile_path: Path) -> str:
 def _is_background(label_path: Path) -> bool:
     """Return ``True`` if a YOLO label file is empty (background tile).
 
-    An empty label file or a file containing only whitespace is treated as
-    a background tile.  A missing file is also treated as background (the
-    annotator silently skipped it).
-
     Args:
         label_path: Path to the ``.txt`` label file.
 
@@ -182,72 +226,13 @@ def _is_background(label_path: Path) -> bool:
     return label_path.read_text().strip() == ""
 
 
-def _assign_splits(
-    source_images: List[str],
-    train_ratio: float,
-    val_ratio: float,
-) -> Dict[str, str]:
-    """Assign each source image name to a split string.
-
-    Images are assigned in order after shuffling.  The split boundaries are
-    computed as integer indices to avoid floating-point rounding issues.
-
-    Args:
-        source_images: Unique source image names (already shuffled).
-        train_ratio: Fraction for the training set.
-        val_ratio: Fraction for the validation set.
-
-    Returns:
-        Mapping ``{source_image_name: split_name}`` where ``split_name``
-        is one of ``"train"``, ``"val"``, or ``"test"``.
-
-    Note:
-        When there are fewer source images than splits (e.g., 2 images for
-        a 3-way split), some splits will be empty.  A warning is logged.
-    """
-    n = len(source_images)
-    n_train = max(1, round(n * train_ratio))
-    n_val   = max(0, round(n * val_ratio))
-    # test gets the remainder — no rounding error accumulation.
-    n_test  = n - n_train - n_val
-
-    if n_test < 0:
-        # Clamping: val takes from train if not enough images.
-        n_val  += n_test
-        n_test  = 0
-
-    if n_val == 0:
-        logger.warning(
-            "Not enough source images (%d) to populate the validation split. "
-            "Consider adding more source images or reducing val_ratio.",
-            n,
-        )
-    if n_test == 0:
-        logger.warning(
-            "Not enough source images (%d) to populate the test split. "
-            "Consider adding more source images or reducing test_ratio.",
-            n,
-        )
-
-    assignment: Dict[str, str] = {}
-    for i, name in enumerate(source_images):
-        if i < n_train:
-            assignment[name] = "train"
-        elif i < n_train + n_val:
-            assignment[name] = "val"
-        else:
-            assignment[name] = "test"
-
-    return assignment
-
-
 def _move_pair(
     src_img: Path,
     src_lbl: Optional[Path],
     dst_img_dir: Path,
     dst_lbl_dir: Path,
 ) -> None:
-    """Atomically move an image tile and its label file to destination directories.
+    """Move an image tile and its label file to destination directories.
 
     Args:
         src_img: Source image path (GeoTIFF tile).
@@ -266,6 +251,321 @@ def _move_pair(
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers — annotation profiling
+# ---------------------------------------------------------------------------
+
+def _build_source_profiles(
+    source_to_tiles: Dict[str, List[Path]],
+    labels_raw_dir: Path,
+) -> Dict[str, Dict[int, int]]:
+    """Scan label files and return per-source annotation class counts.
+
+    This must be called *before* any files are moved so that labels are
+    still in ``labels_raw_dir``.
+
+    Args:
+        source_to_tiles: Mapping ``{source_name: [tile_path, ...]}``.
+        labels_raw_dir: Directory containing the raw YOLO ``.txt`` files.
+
+    Returns:
+        Mapping ``{source_name: {class_id: annotation_count}}``.
+        Background-only sources have an empty inner dict.
+    """
+    profiles: Dict[str, Dict[int, int]] = {}
+    for src, tiles in source_to_tiles.items():
+        counts: Dict[int, int] = {}
+        for tile_path in tiles:
+            lbl = labels_raw_dir / f"{tile_path.stem}.txt"
+            if not lbl.exists():
+                continue
+            for line in lbl.read_text().splitlines():
+                line = line.strip()
+                if line:
+                    cid = int(line.split()[0])
+                    counts[cid] = counts.get(cid, 0) + 1
+        profiles[src] = counts
+    return profiles
+
+
+def _compute_split_capacities(
+    n_sources: int,
+    train_ratio: float,
+    val_ratio: float,
+    test_ratio: float,
+) -> Dict[str, int]:
+    """Compute integer source-count caps that sum exactly to ``n_sources``.
+
+    Capacities are set as the rounded ratio of total sources, with a
+    minimum of 1 for any non-zero ratio.  The train split absorbs any
+    rounding residual.
+
+    Args:
+        n_sources: Total number of unique source images.
+        train_ratio: Target fraction for training.
+        val_ratio: Target fraction for validation.
+        test_ratio: Target fraction for testing.
+
+    Returns:
+        ``{"train": n_train, "val": n_val, "test": n_test}`` where
+        ``n_train + n_val + n_test == n_sources``.
+    """
+    n_val  = max(1, round(n_sources * val_ratio))  if val_ratio  > 1e-9 else 0
+    n_test = max(1, round(n_sources * test_ratio)) if test_ratio > 1e-9 else 0
+    n_train = n_sources - n_val - n_test
+
+    # Guard against over-allocation shrinking train below 1.
+    if n_train < 1:
+        # Trim val and test by 1 each until train ≥ 1.
+        while n_train < 1 and (n_val > 0 or n_test > 0):
+            if n_test > n_val:
+                n_test -= 1
+            else:
+                n_val  -= 1
+            n_train += 1
+
+    return {"train": n_train, "val": n_val, "test": n_test}
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — class-aware assignment
+# ---------------------------------------------------------------------------
+
+def _deficit_score(
+    profile:         Dict[int, int],
+    split:           str,
+    allocated:       Dict[str, Dict[int, int]],
+    class_totals:    Dict[int, int],
+    ratios:          Dict[str, float],
+    priority_ids:    List[int],
+    priority_weight: float,
+) -> float:
+    """Score the benefit of assigning *profile* to *split*.
+
+    For every class ``c`` the source contributes ``delta_c`` annotations.
+    The score is::
+
+        Σ_c  w_c  *  delta_c  *  gap_c  /  total_c
+
+    where:
+        - ``w_c`` is ``priority_weight`` for priority classes, else ``1.0``
+        - ``gap_c = target_frac - current_frac`` (positive ↔ split is
+          under-represented in class c, so assigning more is beneficial;
+          negative ↔ already over-represented, penalised)
+        - Normalising by ``total_c`` makes all classes contribute on the
+          same relative scale regardless of absolute frequency.
+
+    Args:
+        profile:         ``{class_id: count}`` for the source being scored.
+        split:           Candidate split name (``"train"``, ``"val"``, ``"test"``).
+        allocated:       Current accumulated counts per split per class.
+        class_totals:    Global annotation count per class.
+        ratios:          Target ratio per split.
+        priority_ids:    Class IDs that receive extra scoring weight.
+        priority_weight: Multiplier for priority class contributions.
+
+    Returns:
+        A float score; higher is better.
+    """
+    target_frac = ratios[split]
+    score = 0.0
+    for cid, delta in profile.items():
+        if delta == 0:
+            continue
+        total = class_totals.get(cid, 1)
+        current_frac = allocated[split].get(cid, 0) / total
+        gap  = target_frac - current_frac
+        w    = priority_weight if cid in priority_ids else 1.0
+        score += w * delta * gap / total
+    return score
+
+
+def _assign_splits_class_aware(
+    source_images:      List[str],
+    source_profiles:    Dict[str, Dict[int, int]],
+    capacities:         Dict[str, int],
+    train_ratio:        float,
+    val_ratio:          float,
+    test_ratio:         float,
+    priority_class_ids: List[int],
+    priority_weight:    float,
+    rng:                random.Random,
+) -> Dict[str, str]:
+    """Assign source images to splits using deficit-weighted greedy search.
+
+    Processing order
+    ~~~~~~~~~~~~~~~~
+    1.  Sources with at least one priority-class annotation, sorted by
+        descending priority-class count (most constrained first).
+    2.  Sources with other annotations only, sorted by descending total
+        annotation count.
+    3.  Background-only sources (shuffled randomly — class balance is
+        irrelevant for them).
+
+    Assignment rule
+    ~~~~~~~~~~~~~~~
+    For each source, pick the eligible split (not yet at capacity) with the
+    highest :func:`_deficit_score`.  Ties are broken randomly.
+
+    Args:
+        source_images:      All unique source image names.
+        source_profiles:    ``{source: {class_id: count}}`` from
+                            :func:`_build_source_profiles`.
+        capacities:         Maximum number of sources per split from
+                            :func:`_compute_split_capacities`.
+        train_ratio:        Target train fraction.
+        val_ratio:          Target val fraction.
+        test_ratio:         Target test fraction.
+        priority_class_ids: Class IDs to weight heavily.
+        priority_weight:    Weight multiplier for priority classes.
+        rng:                Seeded random instance for tie-breaking.
+
+    Returns:
+        ``{source_name: split_name}`` assignment dictionary.
+    """
+    splits  = ["train", "val", "test"]
+    ratios  = {"train": train_ratio, "val": val_ratio, "test": test_ratio}
+
+    # ── Global class totals ───────────────────────────────────────────────
+    class_totals: Dict[int, int] = {}
+    for profile in source_profiles.values():
+        for cid, cnt in profile.items():
+            class_totals[cid] = class_totals.get(cid, 0) + cnt
+
+    all_class_ids = sorted(class_totals.keys())
+
+    # ── Current allocation tracker ────────────────────────────────────────
+    allocated: Dict[str, Dict[int, int]] = {
+        sp: {cid: 0 for cid in all_class_ids} for sp in splits
+    }
+    split_used: Dict[str, int] = {sp: 0 for sp in splits}
+
+    # ── Sort sources into three priority tiers ────────────────────────────
+    def _priority_count(src: str) -> int:
+        return sum(
+            source_profiles[src].get(cid, 0) for cid in priority_class_ids
+        )
+
+    def _total_count(src: str) -> int:
+        return sum(source_profiles[src].values())
+
+    priority_annotated = [
+        s for s in source_images if _priority_count(s) > 0
+    ]
+    other_annotated = [
+        s for s in source_images
+        if _total_count(s) > 0 and _priority_count(s) == 0
+    ]
+    background_only = [
+        s for s in source_images if _total_count(s) == 0
+    ]
+
+    priority_annotated.sort(key=_priority_count, reverse=True)
+    other_annotated.sort(key=_total_count, reverse=True)
+    rng.shuffle(background_only)
+
+    ordered_sources = priority_annotated + other_annotated + background_only
+
+    logger.debug(
+        "Assignment order: %d priority-annotated + %d other-annotated + "
+        "%d background-only  |  capacities: %s",
+        len(priority_annotated), len(other_annotated), len(background_only),
+        capacities,
+    )
+
+    # ── Greedy assignment ─────────────────────────────────────────────────
+    assignment: Dict[str, str] = {}
+
+    for src in ordered_sources:
+        profile = source_profiles.get(src, {})
+
+        # Eligible splits: those that still have capacity.
+        eligible = [
+            sp for sp in splits
+            if split_used[sp] < capacities[sp]
+        ]
+
+        # Safety net: if somehow no split has capacity left (rounding edge
+        # case), fall back to the least-full split.
+        if not eligible:
+            logger.warning(
+                "All splits at capacity while assigning '%s'. "
+                "Falling back to least-full split.", src
+            )
+            eligible = [min(splits, key=lambda sp: split_used[sp])]
+
+        # Score each eligible split.
+        scores = {
+            sp: _deficit_score(
+                profile, sp, allocated,
+                class_totals, ratios,
+                priority_class_ids, priority_weight,
+            )
+            for sp in eligible
+        }
+
+        # Pick the highest-scoring split; break ties randomly.
+        max_score = max(scores.values())
+        best_splits = [sp for sp, sc in scores.items() if abs(sc - max_score) < 1e-12]
+        chosen = rng.choice(best_splits)
+
+        assignment[src] = chosen
+        split_used[chosen] += 1
+        for cid, cnt in profile.items():
+            allocated[chosen][cid] = allocated[chosen].get(cid, 0) + cnt
+
+    return assignment
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — diagnostics
+# ---------------------------------------------------------------------------
+
+def _log_class_distribution(
+    assignment:      Dict[str, str],
+    source_profiles: Dict[str, Dict[int, int]],
+    class_names:     Optional[Dict[int, str]] = None,
+) -> None:
+    """Log a per-class annotation count table across splits.
+
+    Args:
+        assignment:      ``{source_name: split_name}``.
+        source_profiles: ``{source_name: {class_id: count}}``.
+        class_names:     Optional ``{class_id: name}`` for readable output.
+    """
+    splits      = ["train", "val", "test"]
+    tally:      Dict[str, Dict[int, int]] = {sp: {} for sp in splits}
+    all_class_ids: set = set()
+
+    for src, sp in assignment.items():
+        for cid, cnt in source_profiles.get(src, {}).items():
+            tally[sp][cid] = tally[sp].get(cid, 0) + cnt
+            all_class_ids.add(cid)
+
+    if not all_class_ids:
+        logger.info("  (no annotated tiles found — nothing to report)")
+        return
+
+    header = f"  {'Class':<28}  {'Train':>7}  {'Val':>7}  {'Test':>7}  {'Total':>7}"
+    logger.info(header)
+    logger.info("  " + "-" * (len(header) - 2))
+
+    for cid in sorted(all_class_ids):
+        label = (class_names or {}).get(cid, f"class_{cid}")
+        tr = tally["train"].get(cid, 0)
+        vl = tally["val"].get(cid, 0)
+        te = tally["test"].get(cid, 0)
+        tot = tr + vl + te
+        logger.info(
+            "  %-28s  %7d  %7d  %7d  %7d   "
+            "(%.1f%% / %.1f%% / %.1f%%)",
+            label, tr, vl, te, tot,
+            100 * tr / (tot or 1),
+            100 * vl / (tot or 1),
+            100 * te / (tot or 1),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Public API — splitting
 # ---------------------------------------------------------------------------
 
@@ -274,21 +574,33 @@ class DatasetSplitter:
 
     Grouping is performed at the *source-image level* to guarantee zero
     spatial leakage: tiles that share an origin image always end up in the
-    same partition.  See module docstring for motivation.
+    same partition.
+
+    Assignment is driven by a **deficit-weighted greedy algorithm** that
+    minimises per-class ratio deviation, with configurable extra weight for
+    priority classes (Pirogue, Double_hulled_Pirogue by default).
 
     Args:
-        config: :class:`SplitConfig` specifying ratios and random seed.
+        config: :class:`SplitConfig` specifying ratios, seed, and class
+            priorities.
+        class_names: Optional ``{class_id: name}`` mapping used purely for
+            the diagnostic log table.  Has no effect on assignment logic.
     """
 
-    def __init__(self, config: SplitConfig) -> None:
-        self._cfg = config
+    def __init__(
+        self,
+        config:      SplitConfig,
+        class_names: Optional[Dict[int, str]] = None,
+    ) -> None:
+        self._cfg         = config
+        self._class_names = class_names
 
     def split(
         self,
-        tiles_dir: Path,
+        tiles_dir:      Path,
         labels_raw_dir: Path,
-        images_dir: Path,
-        labels_dir: Path,
+        images_dir:     Path,
+        labels_dir:     Path,
     ) -> Dict[str, List[Path]]:
         """Distribute tiles and labels into split subdirectories.
 
@@ -297,21 +609,25 @@ class DatasetSplitter:
         split, then physically moved from *tiles_dir* / *labels_raw_dir*
         into *images_dir/<split>/* and *labels_dir/<split>/*.
 
+        Assignment maximises class-ratio fidelity using a deficit-weighted
+        greedy algorithm; priority classes receive extra scoring weight.
+
         Args:
-            tiles_dir: Directory of GeoTIFF tiles (step 1 output).
-            labels_raw_dir: Directory of YOLO ``.txt`` files (step 2 output).
-            images_dir: Root output directory; subdirectories
-                ``train/``, ``val/``, ``test/`` are created automatically.
-            labels_dir: Root output directory for labels; mirrored
-                structure to *images_dir*.
+            tiles_dir:      Directory of GeoTIFF tiles (tiler output).
+            labels_raw_dir: Directory of YOLO ``.txt`` files (annotator
+                            output, flat — not yet split into sub-dirs).
+            images_dir:     Root output directory; ``train/``, ``val/``,
+                            and ``test/`` subdirectories are created here.
+            labels_dir:     Root output directory for labels; mirrors the
+                            structure of *images_dir*.
 
         Returns:
-            Mapping ``{split_name: [tile_path, ...]}`` of tiles moved into
-            each split.
+            ``{split_name: [moved_tile_path, ...]}`` listing every tile
+            moved into each split.
 
         Raises:
             FileNotFoundError: If *tiles_dir* does not exist.
-            RuntimeError: If no ``.tif`` tiles are found.
+            RuntimeError: If no ``.tif`` tiles are found in *tiles_dir*.
         """
         if not tiles_dir.exists():
             raise FileNotFoundError(f"tiles_dir does not exist: {tiles_dir}")
@@ -320,48 +636,76 @@ class DatasetSplitter:
         if not tile_paths:
             raise RuntimeError(f"No .tif tiles found in '{tiles_dir}'.")
 
-        # ------------------------------------------------------------------
-        # 1. Group tiles by source image.
-        # ------------------------------------------------------------------
+        cfg = self._cfg
+
+        # ── 1. Group tiles by source image ────────────────────────────────
         source_to_tiles: Dict[str, List[Path]] = {}
         for tp in tile_paths:
             src = _read_source_tag(tp)
             source_to_tiles.setdefault(src, []).append(tp)
 
         source_images = sorted(source_to_tiles.keys())
+        n_sources     = len(source_images)
+
         logger.info(
-            "Split: %d tile(s) from %d source image(s). "
-            "Ratios: train=%.2f  val=%.2f  test=%.2f",
-            len(tile_paths), len(source_images),
-            self._cfg.train_ratio, self._cfg.val_ratio, self._cfg.test_ratio,
+            "Split: %d tile(s) from %d source image(s).  "
+            "Target ratios: train=%.2f  val=%.2f  test=%.2f",
+            len(tile_paths), n_sources,
+            cfg.train_ratio, cfg.val_ratio, cfg.test_ratio,
         )
 
-        # ------------------------------------------------------------------
-        # 2. Shuffle source images and assign to splits.
-        # ------------------------------------------------------------------
-        rng = random.Random(self._cfg.random_seed)
-        rng.shuffle(source_images)
+        # ── 2. Build annotation profiles (must happen before any file moves) ──
+        logger.info("Building per-source annotation profiles …")
+        source_profiles = _build_source_profiles(source_to_tiles, labels_raw_dir)
 
-        assignment = _assign_splits(
-            source_images, self._cfg.train_ratio, self._cfg.val_ratio
+        n_annotated_sources = sum(
+            1 for p in source_profiles.values() if p
+        )
+        logger.info(
+            "  %d / %d source image(s) carry at least one annotation.",
+            n_annotated_sources, n_sources,
         )
 
-        split_counts: Dict[str, int] = {"train": 0, "val": 0, "test": 0}
-        result: Dict[str, List[Path]] = {"train": [], "val": [], "test": []}
+        # ── 3. Compute integer capacity caps per split ─────────────────────
+        capacities = _compute_split_capacities(
+            n_sources, cfg.train_ratio, cfg.val_ratio, cfg.test_ratio
+        )
+        logger.info("  Source-image capacities: %s", capacities)
 
-        # ------------------------------------------------------------------
-        # 3. Move tiles and labels to split directories.
-        # ------------------------------------------------------------------
+        # ── 4. Class-aware greedy assignment ──────────────────────────────
+        rng = random.Random(cfg.random_seed)
+        assignment = _assign_splits_class_aware(
+            source_images=source_images,
+            source_profiles=source_profiles,
+            capacities=capacities,
+            train_ratio=cfg.train_ratio,
+            val_ratio=cfg.val_ratio,
+            test_ratio=cfg.test_ratio,
+            priority_class_ids=cfg.priority_class_ids,
+            priority_weight=cfg.priority_weight,
+            rng=rng,
+        )
+
+        # ── 5. Log per-class distribution ─────────────────────────────────
+        logger.info("Annotation distribution after assignment:")
+        _log_class_distribution(assignment, source_profiles, self._class_names)
+
+        # ── 6. Move tiles and labels to split directories ──────────────────
+        split_counts: Dict[str, int]      = {"train": 0, "val": 0, "test": 0}
+        result:       Dict[str, List[Path]] = {"train": [], "val": [], "test": []}
+
         for src_name, tiles in source_to_tiles.items():
-            split_name = assignment.get(src_name, "train")
+            split_name = assignment[src_name]
             dst_img    = images_dir / split_name
             dst_lbl    = labels_dir / split_name
 
             for tile_path in tiles:
                 label_path = labels_raw_dir / f"{tile_path.stem}.txt"
                 _move_pair(
-                    tile_path, label_path if label_path.exists() else None,
-                    dst_img, dst_lbl,
+                    tile_path,
+                    label_path if label_path.exists() else None,
+                    dst_img,
+                    dst_lbl,
                 )
                 result[split_name].append(dst_img / tile_path.name)
                 split_counts[split_name] += 1
@@ -396,10 +740,10 @@ class BackgroundBalancer:
 
     def balance(
         self,
-        images_dir: Path,
-        labels_dir: Path,
+        images_dir:  Path,
+        labels_dir:  Path,
         archive_dir: Path,
-        splits: List[str],
+        splits:      List[str],
     ) -> None:
         """Balance background tiles for the specified splits.
 
@@ -410,12 +754,13 @@ class BackgroundBalancer:
             <archive_dir>/labels/<split>/
 
         Args:
-            images_dir: Root directory containing ``<split>/`` subdirectories
-                with GeoTIFF tiles.
-            labels_dir: Root directory containing ``<split>/`` subdirectories
-                with YOLO ``.txt`` label files.
+            images_dir:  Root directory containing ``<split>/``
+                         subdirectories with GeoTIFF tiles.
+            labels_dir:  Root directory containing ``<split>/``
+                         subdirectories with YOLO ``.txt`` label files.
             archive_dir: Root directory for archived excess tiles.
-            splits: List of split names to process (e.g., ``["train", "val"]``).
+            splits:      List of split names to process
+                         (e.g., ``["train", "val"]``).
         """
         ratio = self._cfg.background_ratio
         rng   = random.Random(self._cfg.random_seed)
@@ -426,7 +771,9 @@ class BackgroundBalancer:
         )
 
         for split in splits:
-            self._balance_split(split, images_dir, labels_dir, archive_dir, ratio, rng)
+            self._balance_split(
+                split, images_dir, labels_dir, archive_dir, ratio, rng
+            )
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -434,22 +781,22 @@ class BackgroundBalancer:
 
     def _balance_split(
         self,
-        split: str,
-        images_dir: Path,
-        labels_dir: Path,
+        split:       str,
+        images_dir:  Path,
+        labels_dir:  Path,
         archive_dir: Path,
-        ratio: float,
-        rng: random.Random,
+        ratio:       float,
+        rng:         random.Random,
     ) -> None:
-        """Balance one split.
+        """Balance background tiles in one split.
 
         Args:
-            split: Split name (e.g., ``"train"``).
-            images_dir: Root images directory (parent of ``<split>/``).
-            labels_dir: Root labels directory (parent of ``<split>/``).
+            split:       Split name (e.g., ``"train"``).
+            images_dir:  Root images directory (parent of ``<split>/``).
+            labels_dir:  Root labels directory (parent of ``<split>/``).
             archive_dir: Root archive directory.
-            ratio: Target background fraction.
-            rng: Seeded :class:`random.Random` for reproducibility.
+            ratio:       Target background fraction.
+            rng:         Seeded :class:`random.Random` for reproducibility.
         """
         img_split_dir = images_dir / split
         lbl_split_dir = labels_dir / split
@@ -460,8 +807,7 @@ class BackgroundBalancer:
             )
             return
 
-        # Categorise tiles.
-        annotated: List[str]  = []
+        annotated:  List[str] = []
         background: List[str] = []
 
         for img_path in sorted(img_split_dir.glob("*.tif")):
@@ -483,20 +829,19 @@ class BackgroundBalancer:
             )
             return
 
-        # Desired background count: bg = ann × ratio / (1 − ratio)
+        # Desired bg count: bg = ann × ratio / (1 − ratio)
         target_bg = int(n_ann * ratio / (1.0 - ratio))
-        target_bg = min(target_bg, n_bg)  # cannot keep more than we have
+        target_bg = min(target_bg, n_bg)
 
         rng.shuffle(background)
-        keep_bg = background[:target_bg]
         move_bg = background[target_bg:]
 
-        n_total_new    = n_ann + target_bg
-        actual_bg_pct  = target_bg / n_total_new * 100.0 if n_total_new > 0 else 0.0
+        n_total_new   = n_ann + target_bg
+        actual_bg_pct = target_bg / n_total_new * 100.0 if n_total_new > 0 else 0.0
 
         logger.info(
-            "  [%s]  annotated=%d  bg_before=%d  bg_kept=%d (%.1f%%)  bg_archived=%d"
-            "  new_total=%d",
+            "  [%s]  annotated=%d  bg_before=%d  bg_kept=%d (%.1f%%)"
+            "  bg_archived=%d  new_total=%d",
             split.upper(), n_ann, n_bg, target_bg, actual_bg_pct,
             len(move_bg), n_total_new,
         )

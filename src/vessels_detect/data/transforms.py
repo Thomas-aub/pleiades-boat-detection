@@ -30,7 +30,7 @@ Parallelism
 
 Typical usage::
 
-    from src.data.transforms import ImageUpsampler, UpsampleConfig
+    from src.vessels_detect.data.transforms import ImageUpsampler, UpsampleConfig
 
     config = UpsampleConfig(tile_size=320, target_size=640)
     upsampler = ImageUpsampler(config)
