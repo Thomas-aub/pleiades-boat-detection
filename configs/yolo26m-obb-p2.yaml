@@ -1,0 +1,199 @@
+# Ultralytics YOLO26m-OBB — P2 micro-object variant
+# Based on: ultralytics/cfg/models/26/yolo26-obb.yaml (official)
+#           ultralytics/cfg/models/26/yolo26-p2.yaml  (official P2 reference)
+#
+# PURPOSE: Adds a P2 detection head (stride 4, 128×128) for maritime
+#          micro-object detection (e.g. pirogues ≈ 20×6 px).
+#
+# TRANSFER LEARNING from yolo26m-obb.pt:
+#   Layers 0–18  : backbone + FPN top-down   → identical to pretrained, FULL weight transfer
+#   Layer  19    : new C3k2 P2 node          → random init  (new branch)
+#   Layers 20–28 : PAN bottom-up (re-indexed)→ architecture-compatible,
+#                  Ultralytics model.load() will match by layer index where possible
+#   Layer  29    : OBB26 head (4 scales)     → partial transfer for P3/P4/P5 sub-heads,
+#                  P2 sub-head random init
+#
+# USAGE:
+#   from ultralytics import YOLO
+#   model = YOLO("yolo26m-obb-p2.yaml")   # build architecture from this file
+#   model.load("yolo26m-obb.pt")          # transfer pretrained weights
+#   model.train(data="maritime.yaml", imgsz=1024, ...)
+#
+# CHANGES vs original yolo26-obb.yaml:
+#   1. Three P2 layers added in head (layers 17, 18, 19)  [NEW]
+#   2. PAN path re-indexed +3 to accommodate P2 branch    [CHANGED]
+#   3. Concat source indices updated accordingly           [CHANGED]
+#   4. OBB26 head inputs updated from [16,19,22] → [19,22,25,28]  [CHANGED]
+#   5. reg_max stays at 1 (YOLO26 removes DFL — do NOT change)     [UNCHANGED]
+# ─────────────────────────────────────────────────────────────────
+
+# Number of object classes — override at train time via your dataset YAML
+nc: 80
+
+# End-to-end NMS-free inference (YOLO26 native)
+end2end: true
+
+# DFL bins. YOLO26 removes DFL entirely — keep at 1.
+# WARNING: changing this value breaks compatibility with yolo26m-obb.pt weights.
+reg_max: 1
+
+# Model compound scaling constants: [depth_multiple, width_multiple, max_channels]
+# Load a specific scale via e.g. model=yolo26m-obb-p2.yaml (reads scale: m below)
+# or by naming the file yolo26n-obb-p2.yaml / yolo26s-obb-p2.yaml etc.
+scales:
+  n: [0.50, 0.25, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]   # ← active scale for this file (matches yolo26m-obb.pt)
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+# ─────────────────────────────────────────────────────────────────
+# BACKBONE  (layers 0–10)  — UNCHANGED from yolo26-obb original
+#
+# Format: [from, repeats, module, [args]]
+#   from    : -1 = previous layer
+#   repeats : scaled by depth_multiple
+#   args    : scaled by width_multiple where applicable
+#
+# Effective strides (for 1024-px input):
+#   Layer 0 → stride  2, feat 512×512
+#   Layer 1 → stride  4, feat 256×256
+#   Layer 2 → stride  4, feat 256×256  ← P2 skip (used at head layer 18)
+#   Layer 3 → stride  8, feat 128×128
+#   Layer 4 → stride  8, feat 128×128  ← P3 skip (used at head layer 15)
+#   Layer 5 → stride 16, feat  64×64
+#   Layer 6 → stride 16, feat  64×64   ← P4 skip (used at head layer 12)
+#   Layer 7 → stride 32, feat  32×32
+#   Layer 8 → stride 32, feat  32×32
+#   Layer 9 → stride 32, feat  32×32
+#   Layer 10→ stride 32, feat  32×32   ← P5 top  (used at head layer 27)
+# ─────────────────────────────────────────────────────────────────
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]        # 0  P1/2   — stem conv, stride 2
+  - [-1, 1, Conv, [128, 3, 2]]       # 1  P2/4   — downsample ×2, stride 4
+  - [-1, 2, C3k2, [256, false, 0.25]]# 2  P2/4   — lightweight block; SKIP → head layer 18
+  - [-1, 1, Conv, [256, 3, 2]]       # 3  P3/8   — downsample ×2, stride 8
+  - [-1, 2, C3k2, [512, false, 0.25]]# 4  P3/8   — lightweight block; SKIP → head layer 15
+  - [-1, 1, Conv, [512, 3, 2]]       # 5  P4/16  — downsample ×2, stride 16
+  - [-1, 2, C3k2, [512, true]]       # 6  P4/16  — deep block;     SKIP → head layer 12
+  - [-1, 1, Conv, [1024, 3, 2]]      # 7  P5/32  — downsample ×2, stride 32
+  - [-1, 2, C3k2, [1024, true]]      # 8  P5/32  — deep block
+  - [-1, 1, SPPF, [1024, 5, 3, true]]# 9  P5/32  — multi-scale pooling (k=5, levels=3)
+  - [-1, 2, C2PSA, [1024]]           # 10 P5/32  — global attention; SKIP → head layer 27
+
+# ─────────────────────────────────────────────────────────────────
+# HEAD  (Neck + OBB Detection)
+#
+# Neck = FPN (top-down) + PAN (bottom-up) — fully inside the head: block
+#
+# FPN top-down path (layers 11–19):
+#   C2PSA(10) → upsample → fuse P4(6) → C3k2 → upsample → fuse P3(4) → C3k2
+#   → upsample → fuse P2(2) → C3k2   [last 3 lines are NEW]
+#
+# PAN bottom-up path (layers 20–28):
+#   P2(19) → Conv/2 → fuse P3(16) → C3k2 → Conv/2 → fuse P4(13) → C3k2
+#   → Conv/2 → fuse P5(10) → C3k2
+#
+# Detection inputs (4 scales):
+#   Layer 19 → P2/4    stride  4  — micro-objects  (~6–12 px at 1024 input)
+#   Layer 22 → P3/8    stride  8  — small objects  (~12–24 px)
+#   Layer 25 → P4/16   stride 16  — medium objects (~24–48 px)
+#   Layer 28 → P5/32   stride 32  — large objects  (>48 px)
+# ─────────────────────────────────────────────────────────────────
+head:
+
+  # ── FPN: P5 → P4 ──────────────────────────────────────────────
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 11  upsample P5 (stride 32→16)
+  - [[-1, 6], 1, Concat, [1]]                   # 12  fuse with backbone P4 skip (layer 6)
+  - [-1, 2, C3k2, [512, true]]                  # 13  refine P4-merged; used as PAN skip at layer 24
+
+  # ── FPN: P4 → P3 ──────────────────────────────────────────────
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 14  upsample P4 (stride 16→8)
+  - [[-1, 4], 1, Concat, [1]]                   # 15  fuse with backbone P3 skip (layer 4)
+  - [-1, 2, C3k2, [256, true]]                  # 16  refine P3-merged; used as PAN skip at layer 21
+
+  # ── FPN: P3 → P2  [NEW] ───────────────────────────────────────
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 17  [NEW] upsample P3 (stride 8→4)
+  - [[-1, 2], 1, Concat, [1]]                   # 18  [NEW] fuse with backbone P2 skip (layer 2)
+  #                                                           ↑ layer 2: C3k2 256ch, stride 4
+  - [-1, 2, C3k2, [128, true]]                  # 19  [NEW] P2 feature map, stride 4
+  #   C3k2 [128, True]: matches official yolo26-p2.yaml (deep block, NOT lightweight)
+  #   Using shortcut=True here is intentional — matches Ultralytics official choice.
+  #   128 ch (half of P3) keeps memory overhead manageable at 256×256 resolution.
+  #   → OBB detection input #1 (P2/4, micro-objects)
+
+  # ── PAN: P2 → P3  [CHANGED — was layer 17, now 20] ───────────
+  - [-1, 1, Conv, [256, 3, 2]]                  # 20  [CHANGED] downsample P2 (stride 4→8)
+  - [[-1, 16], 1, Concat, [1]]                  # 21  [CHANGED] fuse with FPN P3 (layer 16)
+  - [-1, 2, C3k2, [256, true]]                  # 22  [CHANGED] P3/8 detection feature map
+  #   → OBB detection input #2 (P3/8, small objects)
+
+  # ── PAN: P3 → P4  [CHANGED — was layers 20–22] ───────────────
+  - [-1, 1, Conv, [512, 3, 2]]                  # 23  [CHANGED] downsample P3 (stride 8→16)
+  - [[-1, 13], 1, Concat, [1]]                  # 24  [CHANGED] fuse with FPN P4 (layer 13)
+  - [-1, 2, C3k2, [512, true]]                  # 25  [CHANGED] P4/16 detection feature map
+  #   → OBB detection input #3 (P4/16, medium objects)
+
+  # ── PAN: P4 → P5  [CHANGED — was layers 20–22 in orig obb] ───
+  - [-1, 1, Conv, [512, 3, 2]]                  # 26  [CHANGED] downsample P4 (stride 16→32)
+  - [[-1, 10], 1, Concat, [1]]                  # 27  [CHANGED] fuse with backbone P5 (layer 10)
+  - [-1, 1, C3k2, [1024, true, 0.5, true]]      # 28  [CHANGED] P5/32 detection feature map
+  #   Retains original args [1024, True, 0.5, True]: deep + bottleneck compression + attn
+  #   → OBB detection input #4 (P5/32, large objects)
+
+  # ── OBB Detection Head  [CHANGED — inputs updated] ────────────
+  # Original: [[16, 19, 22], 1, OBB26, [nc, 1]]   (3 scales: P3/P4/P5)
+  # Modified: [[19, 22, 25, 28], 1, OBB26, [nc, 1]] (4 scales: P2/P3/P4/P5)
+  #
+  # Each sub-head predicts per anchor cell:
+  #   - x, y, w, h  (box regression, reg_max=1 bins)
+  #   - nc class scores
+  #   - θ angle     (OBB rotation, specialized angle loss)
+  #
+  # Transfer from yolo26m-obb.pt:
+  #   Sub-heads for P3(22), P4(25), P5(28) → architecture matches → weights load
+  #   Sub-head for P2(19)                  → new, random init
+  - [[19, 22, 25, 28], 1, OBB26, [nc, 1]]       # 29  [CHANGED] 4-scale OBB detection head
+
+# Active scale (matches yolo26m-obb.pt pretrained checkpoint)
+scale: m
+
+# Reference filename (rename this file to match)
+yaml_file: yolo26m-obb-p2.yaml
+
+# Input channels (RGB)
+channels: 3
+
+# ─────────────────────────────────────────────────────────────────
+# TRAINING RECOMMENDATIONS
+#
+# Weight transfer:
+#   model = YOLO("yolo26m-obb-p2.yaml")
+#   model.load("yolo26m-obb.pt")        # partial transfer, no strict=True needed
+#
+# Key hyperparameters (override in your hyp YAML or train() call):
+#   imgsz:     1024    — maximises spatial resolution; at 1024 px a 20×6 px
+#                        pirogue becomes ~40×12 px input, ~10×3 cells at P2
+#   batch:     8–16    — P2 (256×256) adds ~200 MB GPU memory vs 3-scale model
+#   epochs:    100–200 — P2 branch needs more epochs to converge from random init
+#   optimizer: MuSGD   — YOLO26 default; keep unless you have a strong reason to change
+#
+# Loss weights (hyp.yaml):
+#   box: 10.0   — up from default 7.5; penalise bbox error more for small objects
+#   cls:  0.5   — reduce if micro-objects are consistently missed over classified
+#   dfl:  1.5   — keep default (reg_max=1 means DFL is essentially disabled)
+#
+# Augmentation (strongly recommended for maritime micro-objects):
+#   degrees:    180    — full rotation invariance (OBB task)
+#   scale:      [0.1, 2.0]  — expose model to very small instances
+#   mosaic:     1.0    — mix scenes with and without micro-objects
+#   copy_paste: 0.3    — paste pirogues onto diverse sea backgrounds
+#
+# Freezing strategy (optional, speeds up early training):
+#   freeze: 10         — freeze backbone (layers 0–10) for first N epochs,
+#                        then unfreeze for full fine-tuning
+#
+# Memory note:
+#   If GPU memory is tight, reduce P2 channels: change C3k2 [128, true] → [64, true]
+#   at layer 19, and Conv [256, 3, 2] → [128, 3, 2] at layer 20.
+# ─────────────────────────────────────────────────────────────────

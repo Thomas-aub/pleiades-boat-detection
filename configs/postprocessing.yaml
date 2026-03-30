@@ -1,0 +1,63 @@
+# configs/postprocessing.yaml
+# ----------------------------
+# Configuration for the GeoJSON Postprocessing Pipeline.
+#
+# Pipeline stages run in the order listed below.  Set ``enabled: false`` to
+# skip a stage without removing it from the config.
+#
+# Path resolution
+# ~~~~~~~~~~~~~~~
+# All paths are resolved relative to the project root (the working directory
+# when the pipeline is launched).  Use absolute paths if needed.
+#
+# Chaining note
+# ~~~~~~~~~~~~~
+# When both filters are enabled, CoastlineFilter writes its output to
+# ``postprocessed/`` first.  BuildingsFilter then reads from that same
+# directory (``read_from_postprocessed: true``) so the two filters compose.
+# If you run BuildingsFilter standalone (CoastlineFilter disabled), set
+# ``read_from_postprocessed: false`` to read from ``predicted/`` directly.
+
+# ---------------------------------------------------------------------------
+# I/O paths
+# ---------------------------------------------------------------------------
+paths:
+  predicted:     data/postprocessing/predicted      # raw model GeoJSON outputs
+  coastlines:    data/postprocessing/Coastlines     # one mask per predicted file
+  buildings:     data/postprocessing/Buildings      # one mask per predicted file
+  postprocessed: data/postprocessing/postprocessed  # pipeline output (created if absent)
+
+# ---------------------------------------------------------------------------
+# Pipeline stages
+# ---------------------------------------------------------------------------
+stages:
+
+  - id: 1
+    name: coastline_filter
+    enabled: true
+
+  - id: 2
+    name: buildings_filter
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Stage parameters
+# ---------------------------------------------------------------------------
+
+coastline_filter:
+  # Minimum fraction of a prediction's area that must lie inside the coastline
+  # mask for the prediction to be retained.
+  #   0.0 → keep any prediction that merely touches the mask
+  #   1.0 → require the prediction to be fully inside the mask
+  min_area_fraction: 0.50
+
+buildings_filter:
+  # Maximum fraction of a prediction's area that may overlap building
+  # footprints before the prediction is dropped (IoP threshold).
+  #   0.30 → drop predictions where ≥ 30 % of their area is on a building
+  max_overlap_fraction: 0.30
+
+  # Set to true when buildings_filter runs after coastline_filter so it reads
+  # the already-filtered files from postprocessed/ instead of predicted/.
+  # Set to false to run buildings_filter standalone on raw predictions.
+  read_from_postprocessed: true

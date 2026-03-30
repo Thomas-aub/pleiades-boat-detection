@@ -26,7 +26,7 @@ inference:
 
   # Image size at inference time.  Must match the training imgsz and the
   # output size of transforms.py.
-  imgsz: 640
+  imgsz: 1024
 
 # ---------------------------------------------------------------------------
 # Input / Output paths

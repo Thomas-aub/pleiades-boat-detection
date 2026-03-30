@@ -2,72 +2,86 @@
 # configs/train.yaml
 # =============================================================================
 # All YOLO-OBB training hyperparameters for the boat detection model.
-# No values should be hardcoded in Python files; change them here instead.
+# Loaded by scripts/train.py → src/vessels_detect/models/yolo_trainer.py.
+#
+# Model loading mode is inferred automatically from model.weights:
+#   *.pt   → Mode 3: direct checkpoint load (standard fine-tuning)
+#   *.yaml → Mode 2: build from architecture + partial weight transfer
+#              model.pretrained: path to the base *.pt for layer transfer.
+#              Set model.pretrained: "" to train the custom arch from scratch.
+#
+# Set training.resume: true → Mode 1: resume from last.pt (weights below
+# are ignored; the checkpoint path is derived from project/run_name).
 # =============================================================================
 
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
 model:
-  # Pretrained weights to start from.
-  # Variants: yolo26n-obb | yolo26s-obb | yolo26m-obb | yolo26l-obb | yolo26x-obb
-  # Smaller = faster/less accurate;  larger = slower/more accurate.
-  weights: "weights/yolo26m-obb.pt"
+  weights:    "weights/yolo26m-obb-p2.yaml"  # *.yaml or *.pt  (see mode table above)
+  pretrained: "weights/yolo26m-obb.pt"        # base checkpoint for partial transfer
+                                               # ignored when weights is a *.pt file
+                                               # set to "" to train from scratch
 
 # ---------------------------------------------------------------------------
-# Dataset
+# Training
 # ---------------------------------------------------------------------------
 training:
-  dataset_yaml: "data/dataset.yaml"   # path to the YOLO dataset config
+  task:         "obb"             # YOLO task type — must be "obb" for this pipeline
+  dataset_yaml: "data/dataset.yaml"
 
-  # ── Core training knobs ──────────────────────────────────────────────────
-  epochs:        100
-  imgsz:         640     # must match the output of transforms.py (target_size)
-  batch_size:    16       # reduce to 4 or 2 if GPU OOM
-  workers:       4       # DataLoader worker processes
-  patience:      30      # early-stopping: stop if no improvement for N epochs
+  # ── Core ────────────────────────────────────────────────────────────────
+  epochs:       200
+  imgsz:        640
+  batch_size:   8
+  workers:      4
+  patience:     0                 # epochs without improvement before stopping;
+                                  # 0 = disable early stopping entirely
+  save_period:  30                # save a checkpoint every N epochs (0 = disabled)
+  seed:         0                 # RNG seed for reproducibility
+  amp:          true              # Automatic Mixed Precision (fp16 where safe)
+  cache:        false             # cache images in memory: false | "ram" | "disk"
 
   # ── Optimiser ────────────────────────────────────────────────────────────
-  lr0:           0.005   # initial learning rate
-  lrf:           0.1     # final LR multiplier → final_lr = lr0 × lrf = 0.0005
-                          # NOTE: lrf is a *fraction* of lr0, not an absolute value
-  momentum:      0.937
-  weight_decay:  0.0005
-  warmup_epochs: 3.0
+  optimizer:       "auto"         # SGD | Adam | AdamW | NAdam | RAdam | auto
+  lr0:             0.005          # initial learning rate
+  lrf:             0.1            # final LR = lr0 * lrf
+  momentum:        0.937
+  weight_decay:    0.0005
+  warmup_epochs:   5.0
+  warmup_momentum: 0.8
+  warmup_bias_lr:  0.1
+  nbs:             64             # nominal batch size for gradient accumulation scaling
+  cos_lr:          false          # cosine LR schedule (true) vs linear decay (false)
+
+  # ── Regularisation ───────────────────────────────────────────────────────
+  label_smoothing: 0.0
+  freeze:          10             # freeze first N backbone layers; 0 = no freeze
 
   # ── Run management ───────────────────────────────────────────────────────
-  project:       "boat_obb_v3"
-  run_name:      "."
-  device:        0        # GPU id (int), "cpu", or "0,1" for multi-GPU
-  resume:        false    # set true to resume from runs/obb/<run_name>/weights/last.pt
-  save_period:   30       # save checkpoint every N epochs  (0 = only best + last)
-  verbose:       false    # suppress per-batch ultralytics output
+  project:      "boat_obb"
+  run_name:     "gridsearch/up0_t640_cl6_p2"
+  device:       0                 # GPU index, or "cpu", or [0,1] for multi-GPU
+  resume:       false
+  verbose:      false
+  plots:        true              # save metric plots and confusion matrix
 
 # ---------------------------------------------------------------------------
 # Augmentation
 # ---------------------------------------------------------------------------
-# IMPORTANT for OBB tasks
-# ─────────────────────────────────────────────────────────────────────────────
-# Geometric augmentations (rotate, shear, perspective) are handled entirely
-# by YOLO's native pipeline, which correctly rotates the full 8-coordinate
-# OBB label.  DO NOT use Albumentations geometric transforms — they operate
-# on the 4-value [x, y, w, h] format and will corrupt OBB labels.
-# ─────────────────────────────────────────────────────────────────────────────
 augmentation:
-  # Photometric (safe for any label format)
-  hsv_h: 0.015    # hue shift fraction
-  hsv_s: 0.4      # saturation shift fraction
-  hsv_v: 0.3      # value (brightness) shift fraction
+  # ── Photometric — safe for any label format ──────────────────────────────
+  hsv_h: 0.015                    # hue shift (fraction of wheel)
+  hsv_s: 0.2                      # saturation gain
+  hsv_v: 0.1                      # value gain
 
-  # Geometric — YOLO native (OBB-label-aware)
-  mosaic:       0.5     # mosaic probability  (1.0 = always on; effective for small datasets)
-  close_mosaic: 50      # disable mosaic for last N epochs to stabilise convergence
-  degrees:      180.0   # rotation range ± degrees  (180 = full rotation; critical for overhead imagery)
-  fliplr:       0.5     # horizontal flip probability
-  flipud:       0.5     # vertical   flip probability (valid for top-down satellite views)
-  scale:        0.0     # random scale ± fraction  (0 = disabled)
-  multi_scale:  0.0     # disabled — images are pre-upsampled to a fixed size;
-                        # re-scaling would undo that work.
-                        # If enabled, set to a float (e.g. 0.2), NOT a bool.
-  perspective:  0.0     # disabled — orthorectified satellite images have no
-                        # perspective distortion; this adds noise only.
+  # ── Geometric — YOLO native (OBB-label-aware) ────────────────────────────
+  mosaic:       0.5               # mosaic augmentation probability
+  close_mosaic: 20                # disable mosaic for final N epochs
+  degrees:      180.0             # rotation range ±degrees
+  fliplr:       0.5               # horizontal flip probability
+  flipud:       0.5               # vertical flip probability
+  scale:        0.30              # scale jitter ±gain
+  multi_scale:  0.0               # multi-scale probability (0 = disabled)
+  perspective:  0.0               # perspective warp strength (0 = disabled)
+  copy_paste:   0.0               # OBB-aware copy-paste probability (0 = disabled)
