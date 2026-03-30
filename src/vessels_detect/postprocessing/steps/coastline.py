@@ -135,23 +135,6 @@ def _filter_features(
     with open(pred_path, encoding="utf-8") as fh:
         original = json.load(fh)
 
-    # ── DÉBOGAGE ───────────────────────────────────────────────────────
-    from shapely.geometry import shape as _shape
-    all_polys = [_shape(f["geometry"]) for f in original.get("features", []) if f.get("geometry")]
-    if all_polys:
-        from shapely.ops import unary_union
-        preds_union = unary_union(all_polys)
-        
-        # Échantillon : intersection du 1er polygone
-        sample = all_polys[0]
-        inter = sample.intersection(mask_poly)
-        # Dans _filter_features, remplace tous les logger.debug du bloc débogage par logger.info
-        logger.info("[DEBUG] Predictions bbox  : %s", preds_union.bounds)
-        logger.info("[DEBUG] Mask bbox         : %s", mask_poly.bounds)
-        logger.info("[DEBUG] Mask/Preds overlap: %s", preds_union.intersects(mask_poly))
-        logger.info("[DEBUG] Sample frac=%.6f", inter.area / sample.area if sample.area > 0 else 0)
-    # ───────────────────────────────────────────────────────────────────
-
 
     kept: List[dict] = []
     removed = 0

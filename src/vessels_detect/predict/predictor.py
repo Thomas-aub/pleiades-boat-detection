@@ -297,8 +297,8 @@ class Predictor:
                 results   = results[0],
                 tile_path = tile_path,
                 source_image_stem = source_stem,
-                x_off     = x_off,
-                y_off     = y_off,
+                x_off     = 0,
+                y_off     = 0,
                 tile_size = tile_w,  # assumes square tiles; edge tiles same size (padded)
                 affine    = affine,
                 src_crs   = crs_str,
