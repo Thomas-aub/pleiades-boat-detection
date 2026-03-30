@@ -46,14 +46,14 @@ model:
 paths:
   # Tiled GeoTIFF inputs for the predictor.
   # Typically the output of the tiling preprocessing stage.
-  tiles_dir: "data/eval/dataset/tiled/test"
+  tiles_dir: "data/eval/dataset/tiled/images/test"
 
   # One GeoJSON is written here per source image after tile merging.
-  predictions_dir: "predictions/raw"
+  predictions_dir: "data/eval/predictions/raw"
 
   # Output directory for postprocessed GeoJSONs.
   # Must match postprocessing.yaml → paths.postprocessed.
-  postprocessed_dir: "predictions/postprocessed"
+  postprocessed_dir: "data/eval/predictions/postprocessed"
 
   # [evaluation mode only] Ground-truth GeoJSON files, one per source image.
   ground_truth_dir: "data/ground_truth"
@@ -100,7 +100,7 @@ postprocessing:
 # ---------------------------------------------------------------------------
 evaluation:
   # IoU threshold for TP / FP / FN matching.
-  iou_threshold: 0.50
+  iou_threshold: 0.30
 
   # When true, write a final labelled GeoJSON per image with
   # label ∈ {TP, FP, FN} and a "deleted" flag for postprocessing removals.

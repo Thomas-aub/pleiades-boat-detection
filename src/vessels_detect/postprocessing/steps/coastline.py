@@ -108,54 +108,96 @@ class CoastlineFilter(BaseStep):
 
 def _filter_features(
     pred_path: Path,
-    mask: MultiPolygon,
+    mask_poly: MultiPolygon,
     threshold: float,
     criterion: str,
 ) -> Tuple[List[dict], int]:
-    """Filter GeoJSON features based on a spatial overlap criterion.
+    """
+    Filter GeoJSON features based on their spatial intersection with a mask.
 
     Args:
-        pred_path:  Path to the input ``.geojson`` predictions file.
-        mask:       Shapely union mask to test against.
-        threshold:  Numeric threshold for the chosen criterion.
-        criterion:  ``"area_inside"``  — keep when
-                    ``(feature ∩ mask).area / feature.area ≥ threshold``
-                    (used by coastline filter).
-
-                    ``"area_overlap"`` — drop when
-                    ``(feature ∩ mask).area / feature.area ≥ threshold``
-                    (used by buildings filter).
+        pred_path: Path to the input GeoJSON predictions file.
+        mask_poly: The Shapely MultiPolygon/Polygon representing the geographic mask.
+        threshold: The fraction threshold used for the filtering logic.
+        criterion: The filtering logic to apply. Supported values:
+                   - 'area_inside' : Keep feature if intersection fraction >= threshold.
+                   - 'area_overlap': Keep feature if intersection fraction < threshold.
 
     Returns:
-        ``(kept_features, n_removed)`` where ``kept_features`` is the
-        filtered list of raw GeoJSON Feature dicts.
+        A tuple containing:
+            - A list of retained GeoJSON feature dictionaries.
+            - An integer representing the number of dropped features.
+
+    Raises:
+        ValueError: If an unknown filtering criterion is provided.
+        RuntimeError: If a fatal geometric computation error occurs.
     """
     with open(pred_path, encoding="utf-8") as fh:
-        collection = json.load(fh)
+        original = json.load(fh)
 
-    features = collection.get("features", [])
+    # ── DÉBOGAGE ───────────────────────────────────────────────────────
+    from shapely.geometry import shape as _shape
+    all_polys = [_shape(f["geometry"]) for f in original.get("features", []) if f.get("geometry")]
+    if all_polys:
+        from shapely.ops import unary_union
+        preds_union = unary_union(all_polys)
+        
+        # Échantillon : intersection du 1er polygone
+        sample = all_polys[0]
+        inter = sample.intersection(mask_poly)
+        # Dans _filter_features, remplace tous les logger.debug du bloc débogage par logger.info
+        logger.info("[DEBUG] Predictions bbox  : %s", preds_union.bounds)
+        logger.info("[DEBUG] Mask bbox         : %s", mask_poly.bounds)
+        logger.info("[DEBUG] Mask/Preds overlap: %s", preds_union.intersects(mask_poly))
+        logger.info("[DEBUG] Sample frac=%.6f", inter.area / sample.area if sample.area > 0 else 0)
+    # ───────────────────────────────────────────────────────────────────
+
+
     kept: List[dict] = []
-    removed: int = 0
+    removed = 0
 
-    for feat in features:
-        geom_dict = feat.get("geometry")
-        if geom_dict is None:
-            removed += 1
-            continue
+    # 1. Global mask sanitization
+    # Invalid geometries (e.g., self-intersecting polygons) are fixed via buffer(0).
+    if not mask_poly.is_valid:
+        mask_poly = mask_poly.buffer(0)
 
+    # If the mask becomes empty after sanitization, gracefully skip filtering
+    if mask_poly.is_empty:
+        logger.warning(
+            "Mask for '%s' is empty or invalid after sanitization. "
+            "Bypassing filter and retaining all features.",
+            pred_path.name,
+        )
+        return original.get("features", []), 0
+
+    for feat in original.get("features", []):
         try:
-            poly = shape(geom_dict)
+            poly = shape(feat["geometry"])
+
+            # 2. Feature geometry sanitization
             if not poly.is_valid:
                 poly = poly.buffer(0)
-            if poly.is_empty or poly.area < 1e-14:
-                removed += 1
+
+            # 3. Safeguard against zero-area anomalies (e.g., in WGS-84 decimal degrees)
+            feature_area = poly.area
+            if feature_area < 1e-12:
+                logger.debug(
+                    "Feature area near zero in '%s'. Automatically keeping to prevent division by zero.", 
+                    pred_path.name
+                )
+                kept.append(feat)
                 continue
 
-            frac = poly.intersection(mask).area / poly.area
+            # 4. Intersection computation
+            intersection = poly.intersection(mask_poly)
+            frac = intersection.area / feature_area
 
+            # 5. Application of the filtering criterion
             if criterion == "area_inside":
+                # Keep if the feature is sufficiently inside the mask (e.g., Coastlines/Operational Range)
                 passes = frac >= threshold
             elif criterion == "area_overlap":
+                # Keep if the feature does NOT excessively overlap the mask (e.g., Buildings/Clouds)
                 passes = frac < threshold
             else:
                 raise ValueError(f"Unknown filter criterion: '{criterion}'")
@@ -166,8 +208,10 @@ def _filter_features(
                 removed += 1
 
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Skipping malformed feature in '%s': %s", pred_path.name, exc)
-            removed += 1
+            # Unmask hidden errors during geometric calculations
+            raise RuntimeError(
+                f"Fatal geometric computation error in '{pred_path.name}': {exc}"
+            ) from exc
 
     return kept, removed
 

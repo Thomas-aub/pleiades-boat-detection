@@ -22,10 +22,10 @@
 # I/O paths
 # ---------------------------------------------------------------------------
 paths:
-  predicted:     data/eval/predicted      # raw model GeoJSON outputs
+  predicted:     data/eval/predictions/raw     # raw model GeoJSON outputs
   coastlines:    data/eval/Coastlines     # one mask per predicted file
   buildings:     data/eval/Buildings      # one mask per predicted file
-  postprocessed: data/eval/postprocessed  # pipeline output (created if absent)
+  postprocessed: data/eval/predictions/postprocessed # pipeline output (created if absent)
 
 # ---------------------------------------------------------------------------
 # Pipeline stages
