@@ -53,7 +53,7 @@ paths:
 
   # Output directory for postprocessed GeoJSONs.
   # Must match postprocessing.yaml → paths.postprocessed.
-  postprocessed_dir: "data/eval/predictions/postprocessed"
+  postprocessed_dir: "data/eval/predictions/raw"
 
   # [evaluation mode only] Ground-truth GeoJSON files, one per source image.
   ground_truth_dir: "data/eval/raw"
@@ -65,7 +65,7 @@ paths:
 # Prediction (src/vessels_detect/predict/predictor.py)
 # ---------------------------------------------------------------------------
 prediction:
-  conf:   0.15   # per-tile confidence threshold; detections below are dropped
+  conf:   0.30   # per-tile confidence threshold; detections below are dropped
   iou:    0.20   # YOLO internal NMS IoU threshold (per-tile, NOT global NMS)
   imgsz:  1024   # inference image size in pixels
 
@@ -92,7 +92,7 @@ preprocessing:
 # for evaluation or delivery).
 # When enabled, the PostprocessingManager is called with its own config file.
 postprocessing:
-  enabled: true
+  enabled: false
   config:  "configs/postprocessing.yaml"
 
 # ---------------------------------------------------------------------------

@@ -49,13 +49,13 @@ coastline_filter:
   # mask for the prediction to be retained.
   #   0.0 → keep any prediction that merely touches the mask
   #   1.0 → require the prediction to be fully inside the mask
-  min_area_fraction: 0.80
+  min_area_fraction: 0.00
 
 buildings_filter:
   # Maximum fraction of a prediction's area that may overlap building
   # footprints before the prediction is dropped (IoP threshold).
   #   0.30 → drop predictions where ≥ 30 % of their area is on a building
-  max_overlap_fraction: 0.20
+  max_overlap_fraction: 0.01
 
   # Set to true when buildings_filter runs after coastline_filter so it reads
   # the already-filtered files from postprocessed/ instead of predicted/.
