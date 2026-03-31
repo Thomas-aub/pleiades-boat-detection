@@ -42,6 +42,10 @@ from typing import List, Optional
 from src.vessels_detect.utils.config import load_config
 from src.vessels_detect.models.yolo_trainer import YoloTrainer
 
+import os
+# Force OpenCV à se taire et à ignorer les warnings inoffensifs
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+
 
 # ---------------------------------------------------------------------------
 # Logging

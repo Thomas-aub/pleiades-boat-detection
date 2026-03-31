@@ -18,8 +18,8 @@
 # Model
 # ---------------------------------------------------------------------------
 model:
-  weights:    "weights/yolo26m-obb-p2.yaml"  # *.yaml or *.pt  (see mode table above)
-  pretrained: "weights/yolo26m-obb.pt"        # base checkpoint for partial transfer
+  weights:    "weights/yolo26m-obb.pt"  # *.yaml or *.pt  (see mode table above)
+  pretrained: ""        # base checkpoint for partial transfer
                                                # ignored when weights is a *.pt file
                                                # set to "" to train from scratch
 
@@ -31,11 +31,11 @@ training:
   dataset_yaml: "data/dataset.yaml"
 
   # ── Core ────────────────────────────────────────────────────────────────
-  epochs:       200
-  imgsz:        640
-  batch_size:   8
+  epochs:       100
+  imgsz:        2048
+  batch_size:   2
   workers:      4
-  patience:     0                 # epochs without improvement before stopping;
+  patience:     20                 # epochs without improvement before stopping;
                                   # 0 = disable early stopping entirely
   save_period:  30                # save a checkpoint every N epochs (0 = disabled)
   seed:         0                 # RNG seed for reproducibility
@@ -60,7 +60,7 @@ training:
 
   # ── Run management ───────────────────────────────────────────────────────
   project:      "boat_obb"
-  run_name:     "gridsearch/up0_t640_cl6_p2"
+  run_name:     "."
   device:       0                 # GPU index, or "cpu", or [0,1] for multi-GPU
   resume:       false
   verbose:      false
@@ -76,7 +76,7 @@ augmentation:
   hsv_v: 0.1                      # value gain
 
   # ── Geometric — YOLO native (OBB-label-aware) ────────────────────────────
-  mosaic:       0.5               # mosaic augmentation probability
+  mosaic:       0.7               # mosaic augmentation probability
   close_mosaic: 20                # disable mosaic for final N epochs
   degrees:      180.0             # rotation range ±degrees
   fliplr:       0.5               # horizontal flip probability

@@ -18,8 +18,8 @@ PARAMETERS  –  edit this block
 """
 
 # ── Folders ───────────────────────────────────────────────────────────────────
-INPUT_FOLDER  = "data/eval/raw"
-OUTPUT_FOLDER = "data/eval/raw50"
+INPUT_FOLDER  = "data/raw"
+OUTPUT_FOLDER = "data/raw50"
 
 # ── GPU ───────────────────────────────────────────────────────────────────────
 GPU_ENABLED = True
@@ -27,19 +27,19 @@ GPU_DEVICE  = 0
 
 # ── Tiling (For Memory/GPU Chunking, independent of YOLO dataset tiling) ──────
 TILE_SIZE    = 4096   # stride + overlap  (peak mem ≈ (tile_size+overlap)² × bands × 8 B)
-TILE_OVERLAP = 64
+TILE_OVERLAP = 256
 
 # ── Degradation pipeline ──────────────────────────────────────────────────────
 PIPELINE = [
     {"op": "mtf_blur", "mtf_nyquist_x": 0.75, "mtf_nyquist_y": 0.75},
 
     {"op": "spectral_misalign",
-     "global_shift_px": [0.3, 0.2],
-     "per_band_sigma_px": 0.1,
+     "global_shift_px": [0.1, 0.05],
+     "per_band_sigma_px": 0.03,
      "seed": 42},
 
     # Pléiades-Neo (30cm) -> Pléiades (50cm) requires a float scale of 50/30
-    {"op": "downsample", "scale": 5.0 / 3.0, "resampling": "lanczos"},
+    {"op": "downsample", "scale": 5.0 / 3.0, "resampling": "cubic"},
 
     # Signal-dependent noise model parameters (tune based on bit-depth)
     {"op": "add_noise", "gain": 0.05, "read_noise": 0.5, "seed": 42},
