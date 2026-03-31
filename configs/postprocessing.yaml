@@ -22,7 +22,7 @@
 # I/O paths
 # ---------------------------------------------------------------------------
 paths:
-  predicted:     data/eval/predictions/raw     # raw model GeoJSON outputs
+  predicted:     data/eval/predictions/raw50     # raw model GeoJSON outputs
   coastlines:    data/eval/Coastlines     # one mask per predicted file
   buildings:     data/eval/Buildings      # one mask per predicted file
   postprocessed: data/eval/predictions/postprocessed # pipeline output (created if absent)
@@ -49,7 +49,7 @@ coastline_filter:
   # mask for the prediction to be retained.
   #   0.0 → keep any prediction that merely touches the mask
   #   1.0 → require the prediction to be fully inside the mask
-  min_area_fraction: 0.00
+  min_area_fraction: 0.80
 
 buildings_filter:
   # Maximum fraction of a prediction's area that may overlap building
