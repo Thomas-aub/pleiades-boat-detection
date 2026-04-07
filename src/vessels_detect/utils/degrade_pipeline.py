@@ -1,24 +1,33 @@
 """
 =============================================================================
-Sensor Degradation Pipeline for Pansharpened GeoTIFF Imagery  [GPU + Tiling]
+Real-ESRGAN Inspired Degradation Pipeline for GeoTIFF Imagery  [GPU + Tiling]
 =============================================================================
-Core degradation logic.  Can be run standalone (main) or imported as a
+Core degradation logic. Can be run standalone (main) or imported as a
 library by build_dataset.py:
 
     from degrade_pipeline import run_pipeline, SpatialState
 
-Output files mirror INPUT_FOLDER's subfolder structure under OUTPUT_FOLDER,
-keeping original filenames.  When run standalone, degraded full-resolution
-images are written (no gamma / uint8 conversion — that is build_dataset.py's
-responsibility).
+This pipeline simulates real-world sensor degradation using a sequence
+inspired by the Real-ESRGAN paper:
+    "Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data"
+    (Wang et al., ICCVW 2021). 
+    Link: https://openaccess.thecvf.com/content/ICCV2021W/AIM/papers/Wang_Real-ESRGAN_Training_Real-World_Blind_Super-Resolution_With_Pure_Synthetic_Data_ICCVW_2021_paper.pdf
 
+STEPS:
+    1. BLUR   (via Modulation Transfer Function / MTF)
+    2. NOISE  (Signal-dependent photon/read noise)
+    3. RESIZE (Downsampling to lower physical resolution)
+(Note: JPEG compression artifacts are intentionally omitted).
+
+Output files mirror INPUT_FOLDER's subfolder structure under OUTPUT_FOLDER,
+keeping original filenames.
 =============================================================================
 PARAMETERS  –  edit this block
 =============================================================================
 """
 
 # ── Folders ───────────────────────────────────────────────────────────────────
-INPUT_FOLDER  = "data/raw"
+INPUT_FOLDER  = "data/raw30"
 OUTPUT_FOLDER = "data/raw50"
 
 # ── GPU ───────────────────────────────────────────────────────────────────────
@@ -30,19 +39,17 @@ TILE_SIZE    = 4096   # stride + overlap  (peak mem ≈ (tile_size+overlap)² ×
 TILE_OVERLAP = 256
 
 # ── Degradation pipeline ──────────────────────────────────────────────────────
+# Sequence: Blur -> Noise -> Resize (Real-ESRGAN inspired, no JPEG)
 PIPELINE = [
+    # 1. BLUR
     {"op": "mtf_blur", "mtf_nyquist_x": 0.75, "mtf_nyquist_y": 0.75},
 
-    {"op": "spectral_misalign",
-     "global_shift_px": [0.1, 0.05],
-     "per_band_sigma_px": 0.03,
-     "seed": 42},
+    # 2. NOISE (Signal-dependent noise model)
+    {"op": "add_noise", "gain": 0.05, "read_noise": 0.5, "seed": 42},
 
+    # 3. RESIZE (Downsample)
     # Pléiades-Neo (30cm) -> Pléiades (50cm) requires a float scale of 50/30
     {"op": "downsample", "scale": 5.0 / 3.0, "resampling": "cubic"},
-
-    # Signal-dependent noise model parameters (tune based on bit-depth)
-    {"op": "add_noise", "gain": 0.05, "read_noise": 0.5, "seed": 42},
 ]
 
 # ── Output options (standalone mode only) ─────────────────────────────────────
@@ -208,11 +215,6 @@ RESAMPLE_MAP = {
 def _freq_grids(height: int, width: int) -> Tuple[Any, Any]:
     return xp.meshgrid(xp.fft.fftfreq(height), xp.fft.fftfreq(width), indexing="ij")
 
-def _fft_phase_shift(band: Any, dy: float, dx: float) -> Any:
-    Fy, Fx = _freq_grids(*band.shape)
-    phase  = xp.exp(xp.asarray(-2j * math.pi) * (Fy * dy + Fx * dx))
-    return xp.real(xp.fft.ifft2(xp.fft.fft2(band) * phase))
-
 def _normalised_fft_convolve(band: Any, nodata_mask: Any, H: Any) -> Any:
     valid  = (~nodata_mask).astype(xp.float64)
     filled = xp.where(~nodata_mask, band, xp.float64(0.0))
@@ -283,20 +285,6 @@ def op_downsample(
         ))
     return out_bands, out_masks, new_state
 
-def op_spectral_misalign(
-    bands: List[Any], masks: List[Any],
-    global_shift_px: List[float], per_band_sigma_px: float,
-    rng: np.random.Generator,
-) -> Tuple[List[Any], List[Any]]:
-    gdy, gdx = float(global_shift_px[0]), float(global_shift_px[1])
-    out_bands, out_masks = [], []
-    for i, (band, mask) in enumerate(zip(bands, masks)):
-        dy = gdy + rng.normal(0.0, per_band_sigma_px)
-        dx = gdx + rng.normal(0.0, per_band_sigma_px)
-        out_bands.append(_fft_phase_shift(band, dy, dx))
-        out_masks.append(_fft_phase_shift(mask.astype(xp.float64), dy, dx) > 0.5)
-    return out_bands, out_masks
-
 # ---------------------------------------------------------------------------
 # Pipeline runner
 # ---------------------------------------------------------------------------
@@ -320,6 +308,11 @@ def run_pipeline(
         if name == "mtf_blur":
             nx, ny    = float(step["mtf_nyquist_x"]), float(step["mtf_nyquist_y"])
             dev_bands = [op_mtf_blur(b, m, nx, ny) for b, m in zip(dev_bands, dev_masks)]
+
+        elif name == "add_noise":
+            rng       = np.random.default_rng(step.get("seed"))
+            dev_bands = [op_add_noise(b, m, float(step["gain"]), float(step["read_noise"]), rng)
+                         for b, m in zip(dev_bands, dev_masks)]
             
         elif name == "downsample":
             dev_bands, dev_masks, state = op_downsample(
@@ -327,19 +320,6 @@ def run_pipeline(
                 scale=float(step["scale"]),
                 resampling=step.get("resampling", "average"),
             )
-            
-        elif name == "spectral_misalign":
-            dev_bands, dev_masks = op_spectral_misalign(
-                dev_bands, dev_masks,
-                global_shift_px   = step.get("global_shift_px",   [0.0, 0.0]),
-                per_band_sigma_px = float(step.get("per_band_sigma_px", 0.0)),
-                rng               = np.random.default_rng(step.get("seed")),
-            )
-
-        elif name == "add_noise":
-            rng       = np.random.default_rng(step.get("seed"))
-            dev_bands = [op_add_noise(b, m, float(step["gain"]), float(step["read_noise"]), rng)
-                         for b, m in zip(dev_bands, dev_masks)]
 
         else:
             raise ValueError(f"Unknown pipeline op '{name}'.")

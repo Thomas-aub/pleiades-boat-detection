@@ -125,5 +125,5 @@ python scripts/predict.py --config configs/predict.yaml --mode evaluation
 
 ## References
 
-
+> **Ultralytics YOLO26** > Jocher, G., & Qiu, J. (2026). *Ultralytics YOLO26* (Version 26.0.0) [Computer software]. Available at [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) (License: AGPL-3.0)
 

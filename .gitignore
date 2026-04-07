@@ -34,6 +34,8 @@ tiles/*
 
 *.png
 boat_obb_v*/
+boat_obb2/
+boat_obb*/
 
 runs/
 crops/ 

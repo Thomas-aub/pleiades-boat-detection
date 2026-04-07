@@ -29,16 +29,14 @@ pipeline:
 # Model
 # ---------------------------------------------------------------------------
 model:
-  weights: "best.pt"
+  weights: "boat_obb2/weights/best.pt"
 
   # Human-readable class names indexed by YOLO class_id.
   class_names:
     0: Pirogue
     1: Double_hulled_Pirogue
     2: Small_Motorboat
-    3: Medium_Motorboat
-    4: Large_Motorboat
-    5: Sailing_Boat
+    3: Other_boat
 
 # ---------------------------------------------------------------------------
 # I/O paths
@@ -65,7 +63,7 @@ paths:
 # Prediction (src/vessels_detect/predict/predictor.py)
 # ---------------------------------------------------------------------------
 prediction:
-  conf:   0.30   # per-tile confidence threshold; detections below are dropped
+  conf:   0.20   # per-tile confidence threshold; detections below are dropped
   iou:    0.20   # YOLO internal NMS IoU threshold (per-tile, NOT global NMS)
   imgsz:  1024   # inference image size in pixels
 
@@ -82,7 +80,7 @@ prediction:
 # When enabled, the PreprocessingManager is called with its own config file.
 # Only the stages listed as enabled: true in that file will actually run.
 preprocessing:
-  enabled: true
+  enabled: false
   config:  "configs/preprocessing.yaml"
 
 # ---------------------------------------------------------------------------

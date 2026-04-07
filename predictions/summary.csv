@@ -1,9 +1,13 @@
-Image,Resolution (cm/px),Upsampling ratio,Class,TP,FP,FN,Precision,Recall,F1,Bias (%)
-Pléiade, 50, 2,Pirogue,38,47,97,0.4471,0.2815,0.3455,-37.04
-Pléiade, 50, 2,Double_hulled_Pirogue,20,8,27,0.7143,0.4255,0.5333,-40.43
-Pléiade, 50, 4,Pirogue,66,77,69,0.4615,0.4889,0.4748,5.93
-Pléiade, 50, 4,Double_hulled_Pirogue,23,16,24,0.5897,0.4894,0.5349,-17.02
-Pléiade neo, 30, 2,Pirogue,81,62,54,0.5664,0.6,0.5827,5.93
-Pléiade neo, 30, 2,Double_hulled_Pirogue,28,17,19,0.6222,0.5957,0.6087,-4.26
-Pléiade neo, 30, 4,Pirogue,73,83,62,0.4679,0.5407,0.5017,15.56
-Pléiade neo, 30, 4,Double_hulled_Pirogue,29,18,18,0.617,0.617,0.617,0.0
+Model,Image,Resolution (cm/px),Upsampling ratio,Class,TP,FP,FN,Precision,Recall,F1,Bias (%)
+30, Pléiade, 50, 2,Pirogue,38,47,97,0.4471,0.2815,0.3455,-37.04
+30, Pléiade, 50, 2,Double_hulled_Pirogue,20,8,27,0.7143,0.4255,0.5333,-40.43
+30, Pléiade, 50, 4,Pirogue,66,77,69,0.4615,0.4889,0.4748,5.93
+30, Pléiade, 50, 4,Double_hulled_Pirogue,23,16,24,0.5897,0.4894,0.5349,-17.02
+30, Pléiade neo, 30, 2,Pirogue,81,62,54,0.5664,0.6,0.5827,5.93
+30, Pléiade neo, 30, 2,Double_hulled_Pirogue,28,17,19,0.6222,0.5957,0.6087,-4.26
+30, Pléiade neo, 30, 4,Pirogue,73,83,62,0.4679,0.5407,0.5017,15.56
+30, Pléiade neo, 30, 4,Double_hulled_Pirogue,29,18,18,0.617,0.617,0.617,0.0
+50, Pléiade, 50, 2, Pirogue,25,23,110,0.5208,0.1852,0.2732,-64.44
+50, Pléiade, 50, 2, Double_hulled_Pirogue,26,17,21,0.6047,0.5532,0.5778,-8.51
+50, Pléiade, 50, 4, Pirogue,55,34,80,0.618,0.4074,0.4911,-34.07
+50, Pléiade, 50, 4, Double_hulled_Pirogue,33,20,14,0.6226,0.7021,0.66,12.77
