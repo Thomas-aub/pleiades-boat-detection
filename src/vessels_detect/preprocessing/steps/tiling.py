@@ -8,7 +8,7 @@ This step is intentionally **radiometric-free**:
 - Zero contrast stretching.
 - Zero gamma correction.
 - Original source dtype and band count preserved verbatim.
-- Every tile is written — no blank/uniform-tile filtering.
+- Uniform tiles (all pixels identical across every band) are discarded.
 
 Each output tile is a self-contained, valid GeoTIFF that embeds:
 
@@ -282,6 +282,11 @@ def tile_image_raw(
 
                 # Pad edge tiles to uniform tile_size × tile_size.
                 padded = _pad_tile(raw_tile, tile_size, fill_value)
+
+                # Discard tiles where every pixel is identical (uniform scene,
+                # nodata slab, or black padding — no information content).
+                if padded.min() == padded.max():
+                    continue
 
                 tile_transform = src.window_transform(window)
                 profile = _build_tile_profile(src, tile_transform, tile_size, compress)
