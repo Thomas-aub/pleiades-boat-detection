@@ -13,7 +13,7 @@ Pipeline stages
 ::
 
     1 radiometric — percentile stretch + gamma on the full GeoTIFF
-    2 spatial     — Lanczos-4 upsampling via windowed rasterio I/O
+    2 spatial     — Upsampling via windowed rasterio I/O
     3 annotations — GeoJSON OBB → YOLO OBB (global normalisation)
     4 split       — image-level train / val / test (zero spatial leakage)
     5 tiling      — raw GeoTIFF tiling + YOLO OBB label projection

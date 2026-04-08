@@ -15,7 +15,7 @@
 # Pipeline stages (set enabled: false to skip any stage)
 # -------------------------------------------------------
 #   1  radiometric   — percentile stretch + gamma on the full GeoTIFF
-#   2  spatial       — Lanczos-4 upsampling via windowed rasterio I/O
+#   2  spatial       — Upsampling via windowed rasterio I/O
 #   3  annotations   — GeoJSON OBB → YOLO OBB (global normalisation)
 #   4  split         — image-level train / val / test (zero spatial leakage)
 #   5  tiling        — raw GeoTIFF tiling + YOLO OBB label projection
@@ -25,13 +25,13 @@
 # I/O paths  (relative to project root, or absolute)
 # ---------------------------------------------------------------------------
 paths:
-  raw_dir:          "data/eval/raw50"                   # source GeoTIFFs + GeoJSONs
-  processed_dir:    "data/eval/processed"             # root for all processed artefacts
-  radiometric_dir:  "data/eval/processed/radiometric" # stage 1 output
-  spatial_dir:      "data/eval/processed/spatial"     # stage 2 output
-  labels_dir:       "data/eval/processed/labels"      # stage 3 output (pre-split .txt)
-  dataset_dir:      "data/eval/dataset"               # stage 4 output  {train,val,test}/
-  tiled_dir:        "data/eval/dataset/tiled"         # stage 5 output  {train,val,test}/
+  raw_dir:          "data/raw"                   # source GeoTIFFs + GeoJSONs
+  processed_dir:    "data/processed"             # root for all processed artefacts
+  radiometric_dir:  "data/processed/radiometric" # stage 1 output
+  spatial_dir:      "data/processed/spatial"     # stage 2 output
+  labels_dir:       "data/processed/labels"      # stage 3 output (pre-split .txt)
+  dataset_dir:      "data/dataset"               # stage 4 output  {train,val,test}/
+  tiled_dir:        "data/dataset/tiled"         # stage 5 output  {train,val,test}/
 
 # ---------------------------------------------------------------------------
 # Stage registry — controls which stages are executed and in what order.
@@ -78,7 +78,7 @@ radiometric:
 # Stage 2 — Spatial upsampling  (src/preprocessing/steps/spatial.py)
 # ---------------------------------------------------------------------------
 spatial:
-  upscale_ratio: 4
+  upscale_ratio: 2
 
   # Upsampling interpolation algorithm.
   # Options (rasterio Resampling enum names):
@@ -113,12 +113,12 @@ annotations:
   # Classes absent from this map AND not in skip_classes emit a warning.
   class_map:
     0: 0   # Pirogue
-    1: 1   # Double_hulled_Pirogue
-    2: 2   # Small_Motorboat
-    3: 3   # Medium_Motorboat
-    4: 3   # Large_Motorboat
-    5: 3   # Sailing_Boat
-    6: 3   # (merged into Large_Motorboat)
+    1: 0   # Double_hulled_Pirogue
+    2: 1   # Small_Motorboat
+    3: 2   # Medium_Motorboat
+    4: 2   # Large_Motorboat
+    5: 2   # Sailing_Boat
+    6: 2   # (merged into Large_Motorboat)
     8: 0
     10: 0
 
@@ -129,13 +129,13 @@ annotations:
 # Stage 4 — Image-level train / val / test split  (src/preprocessing/steps/split.py)
 # ---------------------------------------------------------------------------
 split:
-  train_ratio: 0.0
-  val_ratio:   0.0
-  test_ratio:  1.00
+  train_ratio: 0.70
+  val_ratio:   0.15
+  test_ratio:  0.15
 
   # Class IDs that receive extra scoring weight during greedy assignment,
   # preventing rare classes from landing entirely in one split.
-  priority_class_ids: [0, 1]   # Pirogue, Double_hulled_Pirogue
+  priority_class_ids: [0]   # Pirogue
   priority_weight:    5.0       # higher → rarer classes balanced more aggressively
 
   # Fixed seed guarantees reproducible splits across pipeline reruns.
@@ -166,17 +166,19 @@ tiling:
   # Which dataset splits to tile.  Must be a subset of the directories
   # created by Stage 4.  Remove any entry to skip that split entirely.
   splits:
+    - train
+    - val
     - test
 
   # Output tile height and width in pixels.  Edge tiles are padded with the
   # source nodata value (or 0 when nodata is not defined) to this exact size.
   # No radiometric processing is applied — raw pixel values are preserved.
-  tile_size: 2048
+  tile_size: 1536
 
   # Pixel overlap between adjacent tiles in both axes.
   # Effective stride = tile_size - overlap.
   # Set to 0 for non-overlapping tiles.
-  overlap: 256
+  overlap: 64
 
   # GeoTIFF compression for the output tile files.
   compress: "lzw"
@@ -185,7 +187,7 @@ tiling:
   # corresponding YOLO label line to be written to that tile's label file.
   # 0.00 → keep every annotation that touches the tile.
   # 0.10 → discard annotations that are less than 10 % visible in the tile.
-  min_visible_frac: 0.10
+  min_visible_frac: 0.15
 
   # Subdirectory names inside tiled_dir for tile images and label files.
   # Changing these lets you redirect outputs without touching the code.

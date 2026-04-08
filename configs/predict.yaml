@@ -29,7 +29,7 @@ pipeline:
 # Model
 # ---------------------------------------------------------------------------
 model:
-  weights: "boat_obb2/weights/best.pt"
+  weights: "gs_best.pt"
 
   # Human-readable class names indexed by YOLO class_id.
   class_names:
@@ -47,14 +47,14 @@ paths:
   tiles_dir: "data/eval/dataset/tiled/images/test"
 
   # One GeoJSON is written here per source image after tile merging.
-  predictions_dir: "data/eval/predictions/raw50"
+  predictions_dir: "data/eval/predictions/raw"
 
   # Output directory for postprocessed GeoJSONs.
   # Must match postprocessing.yaml → paths.postprocessed.
-  postprocessed_dir: "data/eval/predictions/raw50"
+  postprocessed_dir: "data/eval/predictions/raw"
 
   # [evaluation mode only] Ground-truth GeoJSON files, one per source image.
-  ground_truth_dir: "data/eval/raw50"
+  ground_truth_dir: "data/eval/raw"
 
   # [evaluation mode only] All evaluation outputs land here.
   results_dir: "predictions/results"
@@ -80,7 +80,7 @@ prediction:
 # When enabled, the PreprocessingManager is called with its own config file.
 # Only the stages listed as enabled: true in that file will actually run.
 preprocessing:
-  enabled: false
+  enabled: true
   config:  "configs/preprocessing.yaml"
 
 # ---------------------------------------------------------------------------
