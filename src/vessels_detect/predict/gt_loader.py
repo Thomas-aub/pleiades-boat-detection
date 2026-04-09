@@ -70,7 +70,7 @@ def load_ground_truth(
         class_id = props.get("class_id")
         if class_id is None:
             logger.warning(
-                "GT feature in '%s' has no class_id — skipping.", gt_path.name
+                "GT feature in '%s' has no class_id - skipping.", gt_path.name
             )
             continue
 

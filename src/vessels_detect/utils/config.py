@@ -148,7 +148,7 @@ class Config:
         return Config(merged)
 
     # ------------------------------------------------------------------
-    # Dunder protocol — attribute and item access
+    # Dunder protocol - attribute and item access
     # ------------------------------------------------------------------
 
     def __getattr__(self, key: str) -> Any:

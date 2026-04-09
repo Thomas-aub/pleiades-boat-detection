@@ -82,7 +82,7 @@ class CoastlineFilter(BaseStep):
 
             if not mask_path.exists():
                 logger.warning(
-                    "No coastline mask for '%s' — copying unchanged.", pred_path.name
+                    "No coastline mask for '%s' - copying unchanged.", pred_path.name
                 )
                 shutil.copy2(pred_path, out_path)
                 continue

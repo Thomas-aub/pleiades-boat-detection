@@ -5,18 +5,18 @@ Spatial filtering of OBB detections and ground-truth annotations.
 
 Two independent filters are provided:
 
-1.  **Buffer filter** (:func:`keep_inside_buffer`) — retains only the
+1.  **Buffer filter** (:func:`keep_inside_buffer`) - retains only the
     detections / GT boxes whose centroid (or a configurable overlap
     fraction) falls inside a polygon mask (``range.geojson``).  This
     constrains evaluation to the operational area of interest and removes
     detections that are geometrically valid but outside the model's scope.
 
-2.  **Building exclusion** (:func:`exclude_building_overlaps`) — removes
+2.  **Building exclusion** (:func:`exclude_building_overlaps`) - removes
     predictions whose overlap with any building polygon exceeds a
     configurable IoU / intersection-over-prediction threshold.  Ground truth
     is never mutated by this filter; only predicted boxes are pruned.
 
-Both functions operate on :class:`OBBBox` instances — thin dataclasses
+Both functions operate on :class:`OBBBox` instances - thin dataclasses
 that carry the minimal geometry needed by all downstream consumers (scorer,
 GeoJSON writer).
 
@@ -50,7 +50,7 @@ from typing import List, Optional, Sequence, Tuple
 from shapely.geometry import MultiPolygon, Polygon
 
 # ---------------------------------------------------------------------------
-# CRS utilities — single source of truth for mask loading & reprojection
+# CRS utilities - single source of truth for mask loading & reprojection
 # ---------------------------------------------------------------------------
 from src.vessels_detect.utils.crs import (
     load_mask_wgs84,
@@ -126,8 +126,8 @@ class OBBBox:
         source_tile:  Stem of the tile GeoTIFF that produced this prediction.
                       ``None`` for ground-truth annotations.
         source_image: Stem of the original GeoTIFF (before tiling).
-        label:        ``"TP"`` | ``"FP"`` | ``"FN"`` — populated by the scorer.
-        class_name:   Human-readable class name — populated after scoring.
+        label:        ``"TP"`` | ``"FP"`` | ``"FN"`` - populated by the scorer.
+        class_name:   Human-readable class name - populated after scoring.
     """
 
     polygon:      Polygon
@@ -146,7 +146,7 @@ class OBBBox:
 
 
 # =============================================================================
-# Filter 1 — buffer / operational-area mask
+# Filter 1 - buffer / operational-area mask
 # =============================================================================
 
 def keep_inside_buffer(
@@ -204,7 +204,7 @@ def keep_inside_buffer(
 
 
 # =============================================================================
-# Filter 2 — building exclusion
+# Filter 2 - building exclusion
 # =============================================================================
 
 def exclude_building_overlaps(
@@ -223,7 +223,7 @@ def exclude_building_overlaps(
         IoP = (prediction ∩ buildings_mask).area / prediction.area
 
     Predictions with ``IoP ≥ iop_threshold`` are removed.  Ground-truth
-    annotations are **never** passed through this filter — FN boxes on
+    annotations are **never** passed through this filter - FN boxes on
     buildings are retained so the recall computation is not artificially
     inflated.
 

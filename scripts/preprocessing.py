@@ -12,11 +12,11 @@ Pipeline stages
 ~~~~~~~~~~~~~~~
 ::
 
-    1 radiometric — percentile stretch + gamma on the full GeoTIFF
-    2 spatial     — Upsampling via windowed rasterio I/O
-    3 annotations — GeoJSON OBB → YOLO OBB (global normalisation)
-    4 split       — image-level train / val / test (zero spatial leakage)
-    5 tiling      — raw GeoTIFF tiling + YOLO OBB label projection
+    1 radiometric - percentile stretch + gamma on the full GeoTIFF
+    2 spatial     - Upsampling via windowed rasterio I/O
+    3 annotations - GeoJSON OBB → YOLO OBB (global normalisation)
+    4 split       - image-level train / val / test (zero spatial leakage)
+    5 tiling      - raw GeoTIFF tiling + YOLO OBB label projection
                     
 
 Usage
@@ -63,7 +63,7 @@ def _configure_logging(level_name: str) -> None:
     level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        format="%(asctime)s [%(levelname)-8s] %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
@@ -132,7 +132,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
     _configure_logging(args.log_level)
 
-    logger.info("preprocessing.py — SAHI Global Preprocessing Pipeline")
+    logger.info("preprocessing.py - SAHI Global Preprocessing Pipeline")
     logger.info("Config : %s", args.config.resolve())
     if args.stages:
         logger.info("Stage override : %s", args.stages)

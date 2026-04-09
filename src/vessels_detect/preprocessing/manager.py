@@ -9,9 +9,9 @@ Architecture overview
 
     manager.py  (this file)
     │
-    ├── STEP_REGISTRY  — maps stage name → BaseStep subclass
+    ├── STEP_REGISTRY  - maps stage name → BaseStep subclass
     │
-    ├── load_config()  — parse YAML + resolve paths
+    ├── load_config()  - parse YAML + resolve paths
     │
     └── PreprocessingManager
             run()  →  iterates over enabled stages in ``stages`` list
@@ -21,7 +21,7 @@ Adding a new step
 ~~~~~~~~~~~~~~~~~
 1.  Create a module in ``src/vessels_detect/preprocessing/steps/``.
 2.  Subclass :class:`~steps.base.BaseStep` and set a unique ``NAME``.
-3.  Register it in :data:`STEP_REGISTRY` below — zero changes elsewhere.
+3.  Register it in :data:`STEP_REGISTRY` below - zero changes elsewhere.
 
 Typical usage::
 
@@ -44,7 +44,7 @@ import yaml
 from src.vessels_detect.preprocessing.steps.base import BaseStep
 
 # ---------------------------------------------------------------------------
-# Step imports — add new steps here and to STEP_REGISTRY below.
+# Step imports - add new steps here and to STEP_REGISTRY below.
 # ---------------------------------------------------------------------------
 from src.vessels_detect.preprocessing.steps.radiometric import RadiometricStep
 from src.vessels_detect.preprocessing.steps.spatial     import SpatialStep
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: Maps step name (``BaseStep.NAME``) → step class.
-#: Add new steps here — no other file needs to change.
+#: Add new steps here - no other file needs to change.
 STEP_REGISTRY: Dict[str, Type[BaseStep]] = {
     RadiometricStep.NAME: RadiometricStep,
     SpatialStep.NAME:     SpatialStep,
@@ -194,7 +194,7 @@ class PreprocessingManager:
 
             logger.info("")
             logger.info("=" * 70)
-            logger.info("STAGE %s — %s", stage_id, name.upper())
+            logger.info("STAGE %s - %s", stage_id, name.upper())
             logger.info("=" * 70)
 
             t0 = time.perf_counter()

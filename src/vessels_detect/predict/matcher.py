@@ -5,7 +5,7 @@ Greedy IoU matching between postprocessed predictions and ground-truth
 annotations.
 
 This module is the single source of truth for TP / FP / FN assignment
-inside the evaluation pipeline.  It is deliberately free of I/O — it
+inside the evaluation pipeline.  It is deliberately free of I/O - it
 operates purely on lists of :class:`~src.vessels_detect.postprocessing.spatial_filter.OBBBox`
 objects and returns annotated copies.
 
@@ -96,8 +96,8 @@ def compute_per_class_counts(
     """Aggregate TP / FP / FN counts by class_id.
 
     Args:
-        labelled_preds: Output of :func:`match` — predictions with labels.
-        labelled_gts:   Output of :func:`match` — GT boxes with labels.
+        labelled_preds: Output of :func:`match` - predictions with labels.
+        labelled_gts:   Output of :func:`match` - GT boxes with labels.
 
     Returns:
         ``{class_id: {"TP": int, "FP": int, "FN": int}}`` for every class

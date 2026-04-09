@@ -8,7 +8,7 @@ Grid space  (3 × 3 × 2 × 2 = 36 runs)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     spatial upsampling : [1.0, 2.0, 4.0]   (cubic interpolation always)
     tile / imgsz       : [640, 1024, 1536]
-    class config       : [A — 6 classes | B — 4 classes]
+    class config       : [A - 6 classes | B - 4 classes]
     architecture       : [standard *.pt  | custom P2 *.yaml]
 
 Preprocessing cache strategy
@@ -17,17 +17,17 @@ To avoid redundant I/O, preprocessing artefacts are grouped by their
 minimal differentiating key:
 
     (upscale_ratio, class_config)
-        → stages 2–4 (spatial · annotations · split) — **computed once**
+        → stages 2–4 (spatial · annotations · split) - **computed once**
 
     (upscale_ratio, tile_size, class_config)
-        → stage 5 (tiling) — **computed once**
+        → stage 5 (tiling) - **computed once**
 
 Training (architecture-only difference) always runs for all 36 runs.
 
 Class mapping strategies
 ~~~~~~~~~~~~~~~~~~~~~~~~
-Config A — 6 classes  : original taxonomy; skip classes 9, 10, 11.
-Config B — 4 classes  : merged taxonomy designed to reduce inter-class
+Config A - 6 classes  : original taxonomy; skip classes 9, 10, 11.
+Config B - 4 classes  : merged taxonomy designed to reduce inter-class
     ambiguity in visually similar categories:
         0  Pirogue             ← original  0, 8, 10
         1  Double_hulled       ← original  1
@@ -50,15 +50,15 @@ Output layout
 ~~~~~~~~~~~~~
 ::
 
-    data/grid_search/<preproc_key>/        — stages 2–4 artefacts
-    data/grid_search/<tiling_key>/tiled/   — stage 5 tile GeoTIFFs
+    data/grid_search/<preproc_key>/        - stages 2–4 artefacts
+    data/grid_search/<tiling_key>/tiled/   - stage 5 tile GeoTIFFs
     data/grid_search/<tiling_key>/dataset.yaml
-    configs/grid_search/preproc_<key>.yaml — auto-generated temp configs
+    configs/grid_search/preproc_<key>.yaml - auto-generated temp configs
     configs/grid_search/tiling_<key>.yaml
     configs/grid_search/train_<run_id>.yaml
-    logs/grid_search/<run_id>_<stage>.log  — per-run subprocess capture
-    logs/grid_search_summary.txt           — final results table
-    boat_obb/gridsearch/<run_id>/          — YOLO training outputs
+    logs/grid_search/<run_id>_<stage>.log  - per-run subprocess capture
+    logs/grid_search_summary.txt           - final results table
+    boat_obb/gridsearch/<run_id>/          - YOLO training outputs
 
 Usage::
 
@@ -133,7 +133,7 @@ TILE_SIZES:     List[int]   = [640, 1024, 1536]
 class ClassConfig:
     """One annotation class-mapping strategy injected into Stage 3 (annotations)."""
 
-    config_id:    str              # "A" or "B" — used in run IDs / directory names
+    config_id:    str              # "A" or "B" - used in run IDs / directory names
     n_classes:    int              # number of YOLO output classes
     class_map:    Dict[int, int]   # GeoJSON class_id → YOLO class_id
     skip_classes: Tuple[int, ...]  # GeoJSON class IDs discarded at annotation time
@@ -419,7 +419,7 @@ def _patch_train_config(base_cfg: dict, run: GridRun) -> dict:
     cfg["training"]["run_name"]     = f"gridsearch/{run.run_id}"
     cfg["training"]["resume"]       = False
 
-    # Fixed A40 overrides — applied last to guarantee they are never shadowed.
+    # Fixed A40 overrides - applied last to guarantee they are never shadowed.
     for section, overrides in _TRAIN_OVERRIDES.items():
         cfg.setdefault(section, {})
         cfg[section].update(overrides)
@@ -459,7 +459,7 @@ def write_dataset_yaml(run: GridRun) -> Path:
         "val":   "images/val",
         "nc":    run.class_cfg.n_classes,
         "names": list(run.class_cfg.class_names),
-        # Provenance field — ignored by YOLO, useful for debugging.
+        # Provenance field - ignored by YOLO, useful for debugging.
         "_gs_tiling_key": run.tiling_key,
     }
 
@@ -471,7 +471,7 @@ def write_dataset_yaml(run: GridRun) -> Path:
 
 
 # =============================================================================
-# Label remapping utility (standalone — not called by the grid search loop)
+# Label remapping utility (standalone - not called by the grid search loop)
 # =============================================================================
 
 def remap_label_files(
@@ -487,7 +487,7 @@ def remap_label_files(
     **This function is not called by the grid search loop.**  In the normal
     flow, class remapping is handled upstream at Stage 3 (annotations) via
     ``preprocessing.yaml``'s ``class_map`` / ``skip_classes`` fields.  This
-    utility is provided for post-hoc remapping — e.g. when exploring a new
+    utility is provided for post-hoc remapping - e.g. when exploring a new
     class taxonomy without re-running the full preprocessing pipeline.
 
     Each label line has the YOLO OBB format::
@@ -507,7 +507,7 @@ def remap_label_files(
         dry_run:      Log planned actions without writing any files.
 
     Returns:
-        ``(n_files, n_annotations)`` — counts of processed files and
+        ``(n_files, n_annotations)`` - counts of processed files and
         annotation lines retained after remapping.
 
     Raises:
@@ -541,7 +541,7 @@ def remap_label_files(
             new_cls = class_map.get(orig_cls)
             if new_cls is None:
                 logger.warning(
-                    "remap_label_files: unknown class_id=%d in '%s' — kept as-is.",
+                    "remap_label_files: unknown class_id=%d in '%s' - kept as-is.",
                     orig_cls, txt_path.name,
                 )
                 new_cls = orig_cls
@@ -591,12 +591,12 @@ def _run_stage(
         log_path:    Destination file for the full captured output.
 
     Returns:
-        ``(returncode, is_oom)`` — ``is_oom`` is ``True`` when CUDA OOM
+        ``(returncode, is_oom)`` - ``is_oom`` is ``True`` when CUDA OOM
         markers are detected anywhere in the subprocess output.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     cmd_str = " ".join(str(c) for c in cmd)
-    logger.info("[%s] %s — %s", run_id, stage_label, cmd_str)
+    logger.info("[%s] %s - %s", run_id, stage_label, cmd_str)
 
     t0 = time.perf_counter()
     result = subprocess.run(
@@ -620,17 +620,17 @@ def _run_stage(
         tail = result.stdout[-4096:]   # last ~4 KB is almost always diagnostic
         if oom:
             logger.warning(
-                "[%s] %s — CUDA OOM after %.1fs.  Full log: %s",
+                "[%s] %s - CUDA OOM after %.1fs.  Full log: %s",
                 run_id, stage_label, elapsed, log_path,
             )
         else:
             logger.error(
-                "[%s] %s — FAILED (rc=%d, %.1fs)\n%s\nFull log: %s",
+                "[%s] %s - FAILED (rc=%d, %.1fs)\n%s\nFull log: %s",
                 run_id, stage_label, result.returncode, elapsed, tail, log_path,
             )
     else:
         logger.info(
-            "[%s] %s — done in %.1fs.  Log: %s",
+            "[%s] %s - done in %.1fs.  Log: %s",
             run_id, stage_label, elapsed, log_path,
         )
 
@@ -690,7 +690,7 @@ def run_grid_search(
     for idx, run in enumerate(runs, 1):
         logger.info("")
         logger.info("=" * 70)
-        logger.info("RUN %d / %d  —  %s", idx, total, run.run_id)
+        logger.info("RUN %d / %d  -  %s", idx, total, run.run_id)
         logger.info("=" * 70)
 
         t_run = time.perf_counter()
@@ -701,7 +701,7 @@ def run_grid_search(
         # ------------------------------------------------------------------
         if run.preproc_key in failed_preproc:
             logger.warning(
-                "[%s] Skipped — preprocessing key '%s' failed in an earlier run.",
+                "[%s] Skipped - preprocessing key '%s' failed in an earlier run.",
                 run.run_id, run.preproc_key,
             )
             res.status       = "failed"
@@ -735,7 +735,7 @@ def run_grid_search(
             completed_preproc.add(run.preproc_key)
         else:
             logger.info(
-                "[%s] Preprocessing key '%s' already cached — skipping stages 2–4.",
+                "[%s] Preprocessing key '%s' already cached - skipping stages 2–4.",
                 run.run_id, run.preproc_key,
             )
 
@@ -744,7 +744,7 @@ def run_grid_search(
         # ------------------------------------------------------------------
         if run.tiling_key in failed_tiling:
             logger.warning(
-                "[%s] Skipped — tiling key '%s' failed in an earlier run.",
+                "[%s] Skipped - tiling key '%s' failed in an earlier run.",
                 run.run_id, run.tiling_key,
             )
             res.status       = "failed"
@@ -778,12 +778,12 @@ def run_grid_search(
             completed_tiling.add(run.tiling_key)
         else:
             logger.info(
-                "[%s] Tiling key '%s' already cached — skipping stage 5.",
+                "[%s] Tiling key '%s' already cached - skipping stage 5.",
                 run.run_id, run.tiling_key,
             )
 
         # ------------------------------------------------------------------
-        # Dataset YAML  (written every time — cheap, idempotent)
+        # Dataset YAML  (written every time - cheap, idempotent)
         # ------------------------------------------------------------------
         write_dataset_yaml(run)
 
@@ -832,7 +832,7 @@ def run_grid_search(
 # All YAML configs are generated up-front by submit_grid.py before any job
 # starts, so these functions just assert the config exists and delegate to
 # the appropriate pipeline script.  No patching or grid enumeration happens
-# here — the config on disk is already the ground truth.
+# here - the config on disk is already the ground truth.
 # =============================================================================
 
 def _find_run_by_id(run_id: str) -> GridRun:
@@ -976,7 +976,7 @@ def execute_train_stage(run_id: str) -> int:
     if oom:
         # Non-zero exit code is sufficient for SLURM to mark the job as failed
         # and prevent downstream jobs from starting via --kill-on-invalid-dep.
-        logger.error("[%s] CUDA OOM — downstream jobs will be cancelled.", run_id)
+        logger.error("[%s] CUDA OOM - downstream jobs will be cancelled.", run_id)
     return rc
 
 
@@ -1021,7 +1021,7 @@ def _print_summary(results: List[RunResult]) -> None:
     lines = [
         "",
         "=" * 72,
-        f"GRID SEARCH SUMMARY  —  {len(results)} run(s)",
+        f"GRID SEARCH SUMMARY  -  {len(results)} run(s)",
         "=" * 72,
         f"  ✓ Success  : {len(success)}",
         f"  ✗ OOM      : {len(oom)}",
@@ -1055,7 +1055,7 @@ def _configure_logging(level_name: str) -> None:
     level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        format="%(asctime)s [%(levelname)-8s] %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
@@ -1068,7 +1068,7 @@ def _configure_logging(level_name: str) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Automated grid search — maritime vessel detection pipeline.",
+        description="Automated grid search - maritime vessel detection pipeline.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -1108,7 +1108,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # is executed and the full grid loop is skipped entirely.
     slurm = parser.add_argument_group(
         "SLURM single-stage mode",
-        "Set by submit_grid.py — execute exactly one pipeline stage.",
+        "Set by submit_grid.py - execute exactly one pipeline stage.",
     )
     slurm.add_argument(
         "--stage",
@@ -1166,7 +1166,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return execute_train_stage(args.run_id)
 
     # ── Full sequential grid search (monolithic mode) ─────────────────────
-    logger.info("Vessel Detection — YOLO-OBB Grid Search")
+    logger.info("Vessel Detection - YOLO-OBB Grid Search")
     logger.info("  Upscale ratios : %s", UPSCALE_RATIOS)
     logger.info("  Tile sizes     : %s", TILE_SIZES)
     logger.info("  Class configs  : %s", sorted(CLASS_CONFIGS.keys()))
@@ -1183,7 +1183,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.dry_run:
         logger.info("")
-        logger.info("DRY RUN — configs will be written but nothing will execute.")
+        logger.info("DRY RUN - configs will be written but nothing will execute.")
 
     t_total = time.perf_counter()
     results = run_grid_search(

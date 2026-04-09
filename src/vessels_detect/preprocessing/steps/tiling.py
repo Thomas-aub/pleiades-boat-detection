@@ -1,7 +1,7 @@
 """
 src/vessels_detect/preprocessing/steps/tiling.py
 --------------------------------------------------
-Stage 5 — Raw GeoTIFF tiling with YOLO OBB label projection.
+Stage 5 - Raw GeoTIFF tiling with YOLO OBB label projection.
 
 This step is intentionally **radiometric-free**:
 
@@ -34,7 +34,7 @@ Configuration path in the YAML (``cfg["tiling"]``)::
       images_subdir:    images         # subfolder name for tile GeoTIFFs
       labels_subdir:    labels         # subfolder name for tile label files
 
-Input layout (produced by Stage 4 — split)::
+Input layout (produced by Stage 4 - split)::
 
     dataset_dir/
       images/
@@ -152,7 +152,7 @@ class TilingStepConfig:
 
 
 # ---------------------------------------------------------------------------
-# GeoTIFF helpers — pure tiling, no radiometric processing
+# GeoTIFF helpers - pure tiling, no radiometric processing
 # ---------------------------------------------------------------------------
 
 def _pad_tile(
@@ -193,7 +193,7 @@ def _build_tile_profile(
     """Construct a rasterio write profile that preserves source dtype and CRS.
 
     Unlike the original :func:`tiler._build_output_profile`, this variant
-    never forces ``uint8`` — the source dtype is carried through verbatim.
+    never forces ``uint8`` - the source dtype is carried through verbatim.
 
     Args:
         src: Open source rasterio dataset.
@@ -246,7 +246,7 @@ def tile_image_raw(
         compress: GeoTIFF compression codec passed to rasterio.
 
     Returns:
-        List of ``(tile_path, x_off, y_off)`` tuples — one entry per tile
+        List of ``(tile_path, x_off, y_off)`` tuples - one entry per tile
         written.  The pixel offsets are relative to the source image origin
         and can be used to correlate tiles with their labels.
     """
@@ -284,7 +284,7 @@ def tile_image_raw(
                 padded = _pad_tile(raw_tile, tile_size, fill_value)
 
                 # Discard tiles where every pixel is identical (uniform scene,
-                # nodata slab, or black padding — no information content).
+                # nodata slab, or black padding - no information content).
                 if padded.min() == padded.max():
                     continue
 
@@ -377,7 +377,7 @@ def project_labels_to_tile(
     ``min_visible_frac`` are discarded.  Surviving annotations are
     re-expressed as normalised tile-relative coordinates (corners that
     fall outside the tile may have values outside ``[0, 1]``, which is
-    valid for YOLO OBB — the model is trained on full-box coordinates).
+    valid for YOLO OBB - the model is trained on full-box coordinates).
 
     Args:
         label_path: Path to the YOLO OBB label file, or ``None`` / missing
@@ -445,7 +445,7 @@ def project_labels_to_tile(
 # ---------------------------------------------------------------------------
 
 class TilingStep(BaseStep):
-    """Stage 5 — raw GeoTIFF tiling with YOLO OBB label projection.
+    """Stage 5 - raw GeoTIFF tiling with YOLO OBB label projection.
 
     Reads the split dataset produced by :class:`SplitStep` and tiles every
     selected split's images into fixed-size GeoTIFF patches, generating
@@ -543,7 +543,7 @@ class TilingStep(BaseStep):
             tif_files = sorted(split_image_dir.glob("*.tif"))
             if not tif_files:
                 logger.warning(
-                    "No .tif files found in '%s' — skipping split.", split_image_dir
+                    "No .tif files found in '%s' - skipping split.", split_image_dir
                 )
                 continue
 
@@ -616,7 +616,7 @@ class TilingStep(BaseStep):
         label_path: Optional[Path] = label_dir / f"{tif_path.stem}.txt"
         if not label_path.exists():
             label_path = None
-            logger.debug("  No label file found for %s — tiles will be empty.", tif_path.stem)
+            logger.debug("  No label file found for %s - tiles will be empty.", tif_path.stem)
 
         # Retrieve image dimensions without loading the full raster.
         with rasterio.open(tif_path) as src:

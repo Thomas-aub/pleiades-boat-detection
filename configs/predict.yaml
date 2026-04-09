@@ -5,10 +5,10 @@
 #
 # Two modes are supported (set under ``pipeline.mode``):
 #
-#   inference  — preprocess → predict → merge tiles into per-image GeoJSONs
+#   inference  - preprocess → predict → merge tiles into per-image GeoJSONs
 #                → postprocess.  No GT is required.
 #
-#   evaluation — same as inference, then compares each postprocessed GeoJSON
+#   evaluation - same as inference, then compares each postprocessed GeoJSON
 #                against the matching ground-truth file, computes per-class
 #                metrics, saves results.csv, plots and (optionally) writes a
 #                labelled GeoJSON with TP / FP / FN / deleted annotations.
@@ -67,7 +67,7 @@ prediction:
   iou:    0.20   # YOLO internal NMS IoU threshold (per-tile, NOT global NMS)
   imgsz:  1024   # inference image size in pixels
 
-  # Global cross-tile NMS — removes duplicates from overlapping tiles.
+  # Global cross-tile NMS - removes duplicates from overlapping tiles.
   global_nms_iou: 0.20
 
   # JSON indentation for the raw prediction GeoJSON files.

@@ -8,7 +8,7 @@ GeoJSON files.
 This class is called by
 :class:`~src.vessels_detect.manager.PredictManager` only when
 ``pipeline.mode: evaluation``.  It has no knowledge of model weights,
-inference, or preprocessing — it reads ready-made GeoJSON files from disk.
+inference, or preprocessing - it reads ready-made GeoJSON files from disk.
 
 Per-image workflow
 ~~~~~~~~~~~~~~~~~~
@@ -100,7 +100,7 @@ class Evaluator:
             raw_path = predictions_dir / post_path.name
 
             if not gt_path.exists():
-                logger.warning("No GT file for '%s' — skipping.", stem)
+                logger.warning("No GT file for '%s' - skipping.", stem)
                 continue
 
             logger.info("Evaluating: %s", stem)
@@ -140,7 +140,7 @@ class Evaluator:
                 )
 
         if not global_counts:
-            logger.warning("No evaluation data collected — check GT directory.")
+            logger.warning("No evaluation data collected - check GT directory.")
             return 0
 
         # ── Global metrics ─────────────────────────────────────────────────

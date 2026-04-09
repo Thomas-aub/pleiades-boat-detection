@@ -308,7 +308,7 @@ def write_prediction_geojson(
     """Serialise all scored boxes to a GeoJSON FeatureCollection.
 
     The output is a valid RFC 7946 GeoJSON file in WGS-84.  Features are
-    ordered: TP first, then FP, then FN — to make inspection easier in QGIS
+    ordered: TP first, then FP, then FN - to make inspection easier in QGIS
     or other GIS tools that render features in file order.
 
     Args:

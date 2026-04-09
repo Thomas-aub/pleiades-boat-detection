@@ -18,14 +18,14 @@ The canonical rule for this project
 
 Public API
 ~~~~~~~~~~
-- :func:`get_tif_crs`        — read the CRS string from a GeoTIFF.
-- :func:`reproject_geometry` — reproject any Shapely geometry.
-- :func:`load_mask_in_tif_crs` — load a GeoJSON mask reprojected to the
+- :func:`get_tif_crs`        - read the CRS string from a GeoTIFF.
+- :func:`reproject_geometry` - reproject any Shapely geometry.
+- :func:`load_mask_in_tif_crs` - load a GeoJSON mask reprojected to the
                                   image CRS (for pixel-space operations).
-- :func:`load_mask_wgs84`    — load a GeoJSON mask and keep it in WGS-84
+- :func:`load_mask_wgs84`    - load a GeoJSON mask and keep it in WGS-84
                                   (for matching against WGS-84 OBBBox
                                   polygons).
-- :func:`ensure_same_crs`    — assert / reproject a geometry to a target
+- :func:`ensure_same_crs`    - assert / reproject a geometry to a target
                                   CRS, raising clearly if the source CRS is
                                   unknown.
 """
@@ -244,7 +244,7 @@ def crs_from_tif_dir(tif_dir: Path) -> Optional[str]:
     """
     first_tif = next(tif_dir.glob("*.tif"), None)
     if first_tif is None:
-        logger.warning("No .tif files found in '%s' — cannot determine CRS.", tif_dir)
+        logger.warning("No .tif files found in '%s' - cannot determine CRS.", tif_dir)
         return None
     crs = get_tif_crs(first_tif)
     logger.debug("Detected image CRS from '%s': %s", first_tif.name, crs)

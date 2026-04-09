@@ -1,11 +1,11 @@
 """
 src/vessels_detect/preprocessing/steps/annotations.py
 ------------------------------------------------------
-Stage 3 — Global Annotation Conversion.
+Stage 3 - Global Annotation Conversion.
 
 Converts GeoJSON oriented bounding-box (OBB) annotations into YOLO OBB
 ``.txt`` label files, with coordinates normalised to the **global** processed
-image dimensions — not to a tile.  This is the correct reference frame for
+image dimensions - not to a tile.  This is the correct reference frame for
 SAHI-based inference, where YOLO sees the whole image and SAHI post-processes
 overlapping slices.
 
@@ -24,7 +24,7 @@ Coordinate flow per annotation
 
 Key difference from the old per-tile converter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-* Normalisation denominator is ``(image_width, image_height)`` — the full
+* Normalisation denominator is ``(image_width, image_height)`` - the full
   image, not a 320 px tile.
 * ``min_visible`` checks visibility against the full image footprint, not a
   tile footprint (practically only clips objects on the sensor swath edge).
@@ -159,7 +159,7 @@ def _obb_corners_wgs84(feature: dict) -> Optional[List[Tuple[float, float]]]:
             pts = pts[:-1]
 
         if len(pts) != 4:
-            logger.debug("OBB has %d vertices (expected 4) — skipping.", len(pts))
+            logger.debug("OBB has %d vertices (expected 4) - skipping.", len(pts))
             return None
 
         return [(float(p[0]), float(p[1])) for p in pts]
@@ -332,7 +332,7 @@ class AnnotationStep(BaseStep):
     2. Reads the image's CRS, Affine, and dimensions directly from the file.
     3. Reprojects annotation corners from WGS 84 → image CRS → pixel space.
     4. Filters by ``min_visible`` against the full image boundary.
-    5. Normalises by ``(width, height)`` — not tile size.
+    5. Normalises by ``(width, height)`` - not tile size.
     6. Writes one ``.txt`` per image (empty file for background images).
     """
 
@@ -344,10 +344,10 @@ class AnnotationStep(BaseStep):
         Args:
             cfg: Resolved configuration dictionary.  Uses:
 
-                * ``cfg["paths"]["spatial_dir"]`` — stage 2 output.
-                * ``cfg["paths"]["raw_dir"]`` — source GeoJSONs.
-                * ``cfg["paths"]["labels_dir"]`` — output label directory.
-                * ``cfg["annotations"]`` — stage hyperparameters.
+                * ``cfg["paths"]["spatial_dir"]`` - stage 2 output.
+                * ``cfg["paths"]["raw_dir"]`` - source GeoJSONs.
+                * ``cfg["paths"]["labels_dir"]`` - output label directory.
+                * ``cfg["annotations"]`` - stage hyperparameters.
         """
         paths  = cfg["paths"]
         params = AnnotationConfig.from_dict(cfg.get("annotations", {}))
@@ -426,7 +426,7 @@ class AnnotationStep(BaseStep):
 
         if geojson_path is None:
             logger.warning(
-                "  No GeoJSON for '%s' — writing empty label.", tif_path.name
+                "  No GeoJSON for '%s' - writing empty label.", tif_path.name
             )
             label_path.write_text("")
             return 0
@@ -461,7 +461,7 @@ class AnnotationStep(BaseStep):
             yolo_cls = params.class_map.get(raw_cls)
             if yolo_cls is None:
                 logger.warning(
-                    "  Unknown class_id=%d in '%s' — skipping annotation.",
+                    "  Unknown class_id=%d in '%s' - skipping annotation.",
                     raw_cls, geojson_path.name,
                 )
                 continue
@@ -490,7 +490,7 @@ class AnnotationStep(BaseStep):
 
             if Polygon(norm).area < 1e-12:
                 logger.debug(
-                    "  Degenerate polygon in '%s' after normalisation — skipped.",
+                    "  Degenerate polygon in '%s' after normalisation - skipped.",
                     tif_path.name,
                 )
                 continue
@@ -500,7 +500,7 @@ class AnnotationStep(BaseStep):
         with open(label_path, "w") as fh:
             if lines:
                 fh.write("\n".join(lines) + "\n")
-            # Empty file = background image — required by YOLO dataloader.
+            # Empty file = background image - required by YOLO dataloader.
 
         logger.debug(
             "  %s → %d annotation(s)", tif_path.name, len(lines)

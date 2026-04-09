@@ -12,7 +12,7 @@ the coastline filter), this step looks for a matching ``<stem>.geojson`` in
 ``buildings/``.  Predictions whose intersection-over-prediction (IoP) with
 any building footprint meets or exceeds *max_overlap_fraction* are dropped.
 
-Filter criterion (IoP — intersection over prediction)
+Filter criterion (IoP - intersection over prediction)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
@@ -95,7 +95,7 @@ class BuildingsFilter(BaseStep):
 
             if not mask_path.exists():
                 logger.warning(
-                    "No buildings mask for '%s' — leaving unchanged.", pred_path.name
+                    "No buildings mask for '%s' - leaving unchanged.", pred_path.name
                 )
                 # When reading from postprocessed, file is already in place.
                 if not read_from_post:

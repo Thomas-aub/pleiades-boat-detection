@@ -3,7 +3,7 @@ src/vessels_detect/predict/metrics.py
 ---------------------------------------
 Per-class metric computation, CSV serialisation, and console reporting.
 
-This module is purely computational — it takes pre-computed TP / FP / FN
+This module is purely computational - it takes pre-computed TP / FP / FN
 counts and returns a structured :class:`~pandas.DataFrame`.  All I/O
 (loading GeoJSONs, writing CSV) is handled by the caller
 (:class:`~src.vessels_detect.predict.evaluation.Evaluator`).

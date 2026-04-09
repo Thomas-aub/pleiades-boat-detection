@@ -1,7 +1,7 @@
 """
 src/vessels_detect/preprocessing/steps/split.py
 ------------------------------------------------
-Stage 4 — Image-Level Train / Val / Test Split.
+Stage 4 - Image-Level Train / Val / Test Split.
 
 Distributes processed GeoTIFF images (and their YOLO label files) into
 ``train``, ``val``, and ``test`` sub-directories using a **class-aware
@@ -370,8 +370,8 @@ class SplitStep(BaseStep):
     """Distribute processed images and labels into train / val / test splits.
 
     Reads from:
-        * ``cfg["paths"]["spatial_dir"]`` — processed GeoTIFFs.
-        * ``cfg["paths"]["labels_dir"]`` — global YOLO label ``.txt`` files.
+        * ``cfg["paths"]["spatial_dir"]`` - processed GeoTIFFs.
+        * ``cfg["paths"]["labels_dir"]`` - global YOLO label ``.txt`` files.
 
     Writes to:
         * ``cfg["paths"]["dataset_dir"]/images/{train,val,test}/``
@@ -392,7 +392,7 @@ class SplitStep(BaseStep):
                 * ``cfg["paths"]["spatial_dir"]``
                 * ``cfg["paths"]["labels_dir"]``
                 * ``cfg["paths"]["dataset_dir"]``
-                * ``cfg["split"]`` — stage hyperparameters.
+                * ``cfg["split"]`` - stage hyperparameters.
         """
         paths  = cfg["paths"]
         params = SplitConfig.from_dict(cfg.get("split", {}))

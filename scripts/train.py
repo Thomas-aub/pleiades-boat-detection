@@ -11,8 +11,8 @@ are hardcoded here.
 
 Model variant is controlled exclusively by ``model.weights`` in the YAML:
 
-- ``*.pt``   — standard fine-tuning from a pretrained checkpoint.
-- ``*.yaml`` — custom architecture (e.g. P2 head) with optional partial
+- ``*.pt``   - standard fine-tuning from a pretrained checkpoint.
+- ``*.yaml`` - custom architecture (e.g. P2 head) with optional partial
   weight transfer from ``model.pretrained``.
 
 Usage::
@@ -60,7 +60,7 @@ def _configure_logging(level_name: str) -> None:
     level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        format="%(asctime)s [%(levelname)-8s] %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
@@ -178,7 +178,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
     _configure_logging(args.log_level)
 
-    logger.info("Boat Detection — YOLO-OBB Training")
+    logger.info("Boat Detection - YOLO-OBB Training")
     logger.info("Config: %s", args.config.resolve())
 
     # ── Load config ────────────────────────────────────────────────────────

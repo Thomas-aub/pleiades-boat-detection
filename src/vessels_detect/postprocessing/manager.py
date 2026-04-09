@@ -9,9 +9,9 @@ Architecture overview
 
     manager.py  (this file)
     │
-    ├── STEP_REGISTRY  — maps stage name → BaseStep subclass
+    ├── STEP_REGISTRY  - maps stage name → BaseStep subclass
     │
-    ├── load_config()  — parse YAML + resolve paths
+    ├── load_config()  - parse YAML + resolve paths
     │
     └── PostprocessingManager
             run()  →  iterates over enabled stages in ``stages`` list
@@ -21,16 +21,16 @@ The postprocessing pipeline operates entirely on GeoJSON files and has
 **no dependency** on model weights, inference code, or rasterio tiles.
 Its only inputs are:
 
-- ``predicted/``    — raw model output GeoJSON files.
-- ``coastlines/``   — per-image coastline boundary GeoJSON masks.
-- ``buildings/``    — per-image building footprint GeoJSON masks.
-- ``postprocessed/``— output directory (created automatically).
+- ``predicted/``    - raw model output GeoJSON files.
+- ``coastlines/``   - per-image coastline boundary GeoJSON masks.
+- ``buildings/``    - per-image building footprint GeoJSON masks.
+- ``postprocessed/``- output directory (created automatically).
 
 Adding a new filter step
 ~~~~~~~~~~~~~~~~~~~~~~~~
 1.  Create a module in ``src/vessels_detect/postprocessing/steps/``.
 2.  Subclass :class:`~steps.base.BaseStep` and set a unique ``NAME``.
-3.  Register it in :data:`STEP_REGISTRY` below — zero changes elsewhere.
+3.  Register it in :data:`STEP_REGISTRY` below - zero changes elsewhere.
 4.  Add the corresponding section to ``configs/postprocessing.yaml``.
 
 Typical usage::
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: Maps step name (``BaseStep.NAME``) → step class.
-#: Add new steps here — no other file needs to change.
+#: Add new steps here - no other file needs to change.
 STEP_REGISTRY: Dict[str, Type[BaseStep]] = {
     CoastlineFilter.NAME: CoastlineFilter,
     BuildingsFilter.NAME: BuildingsFilter,
@@ -189,7 +189,7 @@ class PostprocessingManager:
 
             logger.info("")
             logger.info("=" * 70)
-            logger.info("STAGE %s — %s", stage_id, name.upper())
+            logger.info("STAGE %s - %s", stage_id, name.upper())
             logger.info("=" * 70)
 
             t0 = time.perf_counter()
@@ -205,7 +205,7 @@ class PostprocessingManager:
             total_removed += removed
             elapsed = time.perf_counter() - t0
             logger.info(
-                "Stage %s (%s) — %d polygon(s) removed in %.1f s.",
+                "Stage %s (%s) - %d polygon(s) removed in %.1f s.",
                 stage_id, name, removed, elapsed,
             )
 

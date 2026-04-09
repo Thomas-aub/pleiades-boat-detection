@@ -9,7 +9,7 @@ library by build_dataset.py:
 
 Implements the degradation model from:
     "Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure
-    Synthetic Data" — Wang et al., ICCVW 2021.
+    Synthetic Data" - Wang et al., ICCVW 2021.
     https://openaccess.thecvf.com/content/ICCV2021W/AIM/papers/Wang_Real-ESRGAN_Training_Real-World_Blind_Super-Resolution_With_Pure_Synthetic_Data_ICCVW_2021_paper.pdf
 
 DEGRADATION ORDER (second-order by default, each pass = classical model):
@@ -19,9 +19,9 @@ DEGRADATION ORDER (second-order by default, each pass = classical model):
 Blur choices      : isotropic Gaussian | anisotropic Gaussian |
                     generalized Gaussian (β-shape) | plateau-shaped | sinc
 Noise choices     : additive Gaussian (color or gray) | Poisson (color or gray)
-Resize choices    : area | bilinear | bicubic  (nearest excluded — misalignment)
+Resize choices    : area | bilinear | bicubic  (nearest excluded - misalignment)
 
-(Note: JPEG compression is intentionally omitted — TIF images do not have it.)
+(Note: JPEG compression is intentionally omitted - TIF images do not have it.)
 
 YAML-friendly PIPELINE block (edit the parameters block below):
 
@@ -49,7 +49,7 @@ GPU_ENABLED = True
 GPU_DEVICE  = 0
 
 # ── Tiling (memory/GPU chunking, independent of YOLO dataset tiling) ──────────
-TILE_SIZE    = 4096   # peak mem ≈ (tile_size + overlap)² × bands × 8 B
+TILE_SIZE    = 4096   
 TILE_OVERLAP = 256
 
 # ── Degradation pipeline (Real-ESRGAN second-order model) ─────────────────────
@@ -100,7 +100,7 @@ TILE_OVERLAP = 256
 #     scale              : downsampling factor > 1  (e.g. 5/3 for 30cm→50cm)
 #     methods            : candidate methods to sample from uniformly
 #                          choices: "area" | "bilinear" | "bicubic"
-#                          (nearest-neighbor excluded — introduces misalignment)
+#                          (nearest-neighbor excluded - introduces misalignment)
 #
 PIPELINE = [
     # ── Pass 1 ──────────────────────────────────────────────────────────────
@@ -327,10 +327,10 @@ def _init_backend(enabled: bool, device: int) -> Any:
         cp.cuda.Device(device).use()
         props = cp.cuda.runtime.getDeviceProperties(device)
         name  = props["name"].decode() if isinstance(props["name"], bytes) else props["name"]
-        log.info("Backend  : CuPy  [device %d — %s]", device, name)
+        log.info("Backend  : CuPy  [device %d - %s]", device, name)
         return cp
     except Exception as exc:
-        log.warning("CuPy unavailable (%s) — falling back to NumPy.", exc)
+        log.warning("CuPy unavailable (%s) - falling back to NumPy.", exc)
         return np
 
 
@@ -446,7 +446,7 @@ def _plateau_kernel(
 
 
 def _sinc_kernel(kernel_size: int, omega_c: float) -> np.ndarray:
-    """2-D sinc (ideal low-pass) kernel — Eq. 6 of the paper.
+    """2-D sinc (ideal low-pass) kernel - Eq. 6 of the paper.
 
     k(i,j) = ωc / (2π √(i²+j²)) · J₁(ωc √(i²+j²)),  with k(0,0) = ωc²/(4π).
     """
@@ -462,7 +462,7 @@ def _sinc_kernel(kernel_size: int, omega_c: float) -> np.ndarray:
         k = np.where(r == 0.0, omega_c ** 2 / (4.0 * math.pi),
                      omega_c / (2.0 * math.pi * r) * j1(omega_c * r))
 
-    k = np.maximum(k, 0.0)  # sinc can go slightly negative — clip per paper
+    k = np.maximum(k, 0.0)  # sinc can go slightly negative - clip per paper
     return k / k.sum()
 
 

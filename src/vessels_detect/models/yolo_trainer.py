@@ -11,16 +11,16 @@ hyperparameter.  All configuration is injected at construction time via a
 Model loading modes
 -------------------
 The loading mode is selected automatically from ``model.weights`` in the
-YAML — no code change is required when switching between model variants:
+YAML - no code change is required when switching between model variants:
 
 +------------------+-------------------------------------------+
 | ``model.weights``| Behaviour                                 |
 +==================+===========================================+
-| ``*.pt``         | **Mode 3** — direct checkpoint load.      |
+| ``*.pt``         | **Mode 3** - direct checkpoint load.      |
 |                  | Standard fine-tuning; task is inferred    |
 |                  | from the checkpoint.                      |
 +------------------+-------------------------------------------+
-| ``*.yaml``       | **Mode 2** — custom architecture.         |
+| ``*.yaml``       | **Mode 2** - custom architecture.         |
 |                  | Model is built from the YAML graph, then  |
 |                  | ``model.load()`` transfers all layers     |
 |                  | whose name *and* shape match              |
@@ -29,7 +29,7 @@ YAML — no code change is required when switching between model variants:
 |                  | init.  Set ``model.pretrained: ""`` to   |
 |                  | train from scratch.                       |
 +------------------+-------------------------------------------+
-| ``training``     | **Mode 1** — resume from ``last.pt``      |
+| ``training``     | **Mode 1** - resume from ``last.pt``      |
 | ``.resume: true``| under ``project/run_name/weights/``.      |
 +------------------+-------------------------------------------+
 
@@ -43,7 +43,7 @@ Design decisions
 - **Pure builder.** :meth:`_build_train_kwargs` has no side effects; all
   logging happens in the public methods that call it.
 - **Augmentation isolation.** YOLO's native geometric augmentation pipeline
-  is used for OBB tasks — albumentations geometric transforms cannot handle
+  is used for OBB tasks - albumentations geometric transforms cannot handle
   8-coordinate OBB labels correctly.
 - **Logging only.** No ``print`` statements; all output goes through the
   standard ``logging`` module at appropriate levels.
@@ -87,7 +87,7 @@ class YoloTrainer:
 
     def __init__(self, config: Config) -> None:
         try:
-            from ultralytics import YOLO  # noqa: F401 — validate at init time
+            from ultralytics import YOLO  # noqa: F401 - validate at init time
         except ImportError as exc:
             raise ImportError(
                 "The 'ultralytics' package is required for YoloTrainer. "
@@ -143,7 +143,7 @@ class YoloTrainer:
         # YOLO(yaml, task=...) builds the full compute graph from scratch;
         # model.load(pt) then copies all parameters whose name AND shape match
         # the pretrained checkpoint.  Unmatched layers (new branches such as a
-        # P2 detection head) remain at random initialisation — this is expected
+        # P2 detection head) remain at random initialisation - this is expected
         # and correct.
         if weights.endswith(".yaml"):
             yaml_path = Path(weights)
@@ -182,7 +182,7 @@ class YoloTrainer:
                 logger.info("Weight transfer complete.")
             else:
                 logger.warning(
-                    "model.pretrained is empty — training custom architecture "
+                    "model.pretrained is empty - training custom architecture "
                     "entirely from scratch.  Set model.pretrained: <path>.pt "
                     "for transfer learning."
                 )
@@ -208,9 +208,9 @@ class YoloTrainer:
         Returns:
             The ``ultralytics`` training results object.  Key attributes:
 
-            - ``results.box.map50``  — mAP@50 on the validation set.
-            - ``results.box.map``    — mAP@50-95.
-            - ``results.save_dir``   — directory containing all outputs.
+            - ``results.box.map50``  - mAP@50 on the validation set.
+            - ``results.box.map``    - mAP@50-95.
+            - ``results.save_dir``   - directory containing all outputs.
 
         Raises:
             FileNotFoundError: Propagated from :meth:`load_model`.
@@ -227,7 +227,7 @@ class YoloTrainer:
         # ── Training summary (all values resolved from YAML) ──────────────
         freeze = train_kwargs.get("freeze", 0)
         logger.info("=" * 70)
-        logger.info("YOLO-OBB Training — %s", train_kwargs.get("name", "run"))
+        logger.info("YOLO-OBB Training - %s", train_kwargs.get("name", "run"))
         logger.info("=" * 70)
         logger.info("  Weights     : %s", self._cfg.model.weights)
         logger.info("  Dataset     : %s", train_kwargs["data"])
@@ -281,16 +281,16 @@ class YoloTrainer:
     def _build_train_kwargs(train_cfg: Config, aug_cfg: Config) -> dict:
         """Assemble the ``model.train()`` keyword-argument dictionary.
 
-        This method is intentionally **pure** — it has no side effects and
+        This method is intentionally **pure** - it has no side effects and
         performs no logging.  All values are read from the config with
         explicit fallback defaults so that a partial YAML still produces a
         valid training call.
 
         Two parameters are injected conditionally rather than always:
 
-        - ``freeze`` — omitted when ``0`` to maintain compatibility with
+        - ``freeze`` - omitted when ``0`` to maintain compatibility with
           older Ultralytics releases that do not accept the parameter.
-        - ``copy_paste`` — omitted when ``0.0``; the OBB copy-paste
+        - ``copy_paste`` - omitted when ``0.0``; the OBB copy-paste
           augmentation is only active at values > 0.
 
         Args:
@@ -342,13 +342,13 @@ class YoloTrainer:
             "verbose": bool(_f(train_cfg, "verbose",     False)),
             "plots":   bool(_f(train_cfg, "plots",       True)),
 
-            # ── Augmentation — photometric (safe for any label format) ────
+            # ── Augmentation - photometric (safe for any label format) ────
             "augment": True,
             "hsv_h":   float(_f(aug_cfg, "hsv_h", 0.015)),
             "hsv_s":   float(_f(aug_cfg, "hsv_s", 0.4)),
             "hsv_v":   float(_f(aug_cfg, "hsv_v", 0.3)),
 
-            # ── Augmentation — geometric (YOLO native; OBB-label-aware) ───
+            # ── Augmentation - geometric (YOLO native; OBB-label-aware) ───
             "mosaic":       float(_f(aug_cfg, "mosaic",       0.5)),
             "close_mosaic": int(_f(aug_cfg,   "close_mosaic", 20)),
             "degrees":      float(_f(aug_cfg, "degrees",      180.0)),

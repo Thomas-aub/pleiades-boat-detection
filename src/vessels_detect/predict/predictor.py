@@ -12,7 +12,7 @@ Responsibilities
 4.  Apply global cross-tile NMS to remove duplicate detections on tile
     boundaries.
 5.  Group detections by *source image* (derived from the tile filename
-    stem — see :func:`_source_stem_from_tile`).
+    stem - see :func:`_source_stem_from_tile`).
 6.  Write one ``<image_stem>.geojson`` per source image to ``predictions_dir``.
 
 Tile filename convention
@@ -212,7 +212,7 @@ class Predictor:
             try:
                 source_stem, _, _ = _source_stem_from_tile(tp.stem)
             except ValueError as exc:
-                logger.warning("%s — skipping tile.", exc)
+                logger.warning("%s - skipping tile.", exc)
                 continue
             groups[source_stem].append(tp)
 
@@ -251,7 +251,7 @@ class Predictor:
         Returns:
             Loaded :class:`ultralytics.YOLO` model.
         """
-        from ultralytics import YOLO  # deferred — heavy import
+        from ultralytics import YOLO  # deferred - heavy import
 
         model = YOLO(weights)
         return model

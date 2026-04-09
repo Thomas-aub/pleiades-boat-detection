@@ -1,7 +1,7 @@
 """
 src/vessels_detect/preprocessing/steps/radiometric.py
 ------------------------------------------------------
-Stage 1 — Radiometric Normalisation.
+Stage 1 - Radiometric Normalisation.
 
 Applies a **global** percentile stretch followed by gamma correction to each
 raw GeoTIFF, then writes a uint8 RGB GeoTIFF that preserves all spatial
@@ -9,13 +9,13 @@ metadata (CRS, Affine transform, TIFF tags).
 
 Design goals
 ~~~~~~~~~~~~
-* **Global statistics** — percentiles are computed from a fast thumbnail
+* **Global statistics** - percentiles are computed from a fast thumbnail
   read so that every pixel of the output shares a single, consistent colour
   rendering.  Per-tile contrast drift (which confuses feature extractors) is
   eliminated.
-* **Streaming I/O** — full-resolution data is written band-by-band via
+* **Streaming I/O** - full-resolution data is written band-by-band via
   rasterio windowed I/O to avoid loading the entire image into RAM.
-* **Metadata preservation** — CRS, Affine transform, and all existing TIFF
+* **Metadata preservation** - CRS, Affine transform, and all existing TIFF
   tags are copied verbatim to the output; a ``radiometric_params`` tag is
   appended for provenance.
 
@@ -133,7 +133,7 @@ def _select_band_indices(n_src_bands: int, bands_cfg: Optional[List[int]]) -> Li
     if n_src_bands >= 3:
         return [0, 1, 2]
 
-    # Panchromatic — replicate to all three channels.
+    # Panchromatic - replicate to all three channels.
     return [0, 0, 0]
 
 
@@ -167,7 +167,7 @@ def _compute_stretch_params(
     out_w = max(int(src.width  * scale), 1)
 
     # Read all required source bands in one call (may contain duplicates for
-    # panchromatic case — that is fine, percentiles will be identical).
+    # panchromatic case - that is fine, percentiles will be identical).
     unique_src_bands = sorted(set(b + 1 for b in band_indices))  # 1-based
     thumb = src.read(
         indexes=unique_src_bands,
@@ -250,9 +250,9 @@ class RadiometricStep(BaseStep):
         Args:
             cfg: Resolved configuration dictionary.  Uses:
 
-                * ``cfg["paths"]["raw_dir"]`` — source GeoTIFFs.
-                * ``cfg["paths"]["radiometric_dir"]`` — output directory.
-                * ``cfg["radiometric"]`` — stage hyperparameters.
+                * ``cfg["paths"]["raw_dir"]`` - source GeoTIFFs.
+                * ``cfg["paths"]["radiometric_dir"]`` - output directory.
+                * ``cfg["radiometric"]`` - stage hyperparameters.
         """
         paths  = cfg["paths"]
         params = RadiometricConfig.from_dict(cfg.get("radiometric", {}))

@@ -1,7 +1,7 @@
 """
 src/vessels_detect/preprocessing/steps/spatial.py
 --------------------------------------------------
-Stage 2 — Spatial Resampling (Upsampling / Downsampling).
+Stage 2 - Spatial Resampling (Upsampling / Downsampling).
 
 Rescales each GeoTIFF using a user-defined `upscale_ratio` while preserving
 geospatial integrity via rasterio's WarpedVRT API.

@@ -24,7 +24,7 @@ Architecture
 
     manager.py  (this file)
     │
-    ├── load_config()              — parse predict.yaml, resolve all paths
+    ├── load_config()              - parse predict.yaml, resolve all paths
     │
     └── PredictManager
             run()
@@ -196,7 +196,7 @@ class PredictManager:
     def _run_preprocessing(cfg: dict) -> int:
         logger.info("")
         logger.info("=" * 70)
-        logger.info("STAGE — PREPROCESSING")
+        logger.info("STAGE - PREPROCESSING")
         logger.info("=" * 70)
         sub_cfg_path: Path = cfg["preprocessing"]["config"]
         manager = PreprocessingManager(config_path=sub_cfg_path)
@@ -206,7 +206,7 @@ class PredictManager:
     def _run_prediction(cfg: dict) -> int:
         logger.info("")
         logger.info("=" * 70)
-        logger.info("STAGE — PREDICTION")
+        logger.info("STAGE - PREDICTION")
         logger.info("=" * 70)
         predictor = Predictor()
         return predictor.run(cfg)
@@ -215,7 +215,7 @@ class PredictManager:
     def _run_postprocessing(cfg: dict) -> int:
         logger.info("")
         logger.info("=" * 70)
-        logger.info("STAGE — POSTPROCESSING")
+        logger.info("STAGE - POSTPROCESSING")
         logger.info("=" * 70)
         sub_cfg_path: Path = cfg["postprocessing"]["config"]
         manager = PostprocessingManager(config_path=sub_cfg_path)
@@ -225,7 +225,7 @@ class PredictManager:
     def _run_evaluation(cfg: dict) -> int:
         logger.info("")
         logger.info("=" * 70)
-        logger.info("STAGE — EVALUATION")
+        logger.info("STAGE - EVALUATION")
         logger.info("=" * 70)
         evaluator = Evaluator()
         return evaluator.run(cfg)

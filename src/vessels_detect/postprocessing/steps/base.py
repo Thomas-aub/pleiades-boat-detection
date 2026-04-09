@@ -25,7 +25,7 @@ class BaseStep(ABC):
     via :data:`~src.vessels_detect.postprocessing.manager.STEP_REGISTRY`.
     """
 
-    #: Unique stage name — must match the ``name`` key in the YAML config.
+    #: Unique stage name - must match the ``name`` key in the YAML config.
     NAME: str = ""
 
     @abstractmethod

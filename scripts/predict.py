@@ -23,8 +23,8 @@ Usage
 
 Exit codes
 ~~~~~~~~~~
-``0`` — pipeline completed successfully.
-``1`` — pipeline failed; details are in the log.
+``0`` - pipeline completed successfully.
+``1`` - pipeline failed; details are in the log.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def main() -> int:
     _configure_logging(args.log_level)
 
     logger = logging.getLogger(__name__)
-    logger.info("predict.py — config: %s", args.config.resolve())
+    logger.info("predict.py - config: %s", args.config.resolve())
 
     # Optionally patch the mode before the manager loads the config.
     # We do this by temporarily rewriting the YAML in memory via a thin

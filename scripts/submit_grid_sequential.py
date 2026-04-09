@@ -46,7 +46,7 @@ State persistence
 ``logs/grid_search_seq_state.json`` tracks the cursor (next step index) and
 the last submitted job ID.  The file is written atomically before every real
 job submission so a crash of the manager is always recoverable by re-running
-this script — it will simply pick up where it left off.
+this script - it will simply pick up where it left off.
 
 Usage
 ~~~~~
@@ -147,7 +147,7 @@ _TRAIN_WALLTIME: Dict[int, str] = {
     1536: "12:00:00",
 }
 
-# Manager profile: tiny footprint — it only calls sbatch and exits.
+# Manager profile: tiny footprint - it only calls sbatch and exits.
 _MANAGER_PROFILE = SlurmProfile(
     job_prefix="GS_mgr",
     partition="",          # filled in at runtime from --cpu-partition
@@ -199,7 +199,7 @@ def _make_profiles(
 
 
 # =============================================================================
-# Step descriptor — the linearised execution plan
+# Step descriptor - the linearised execution plan
 # =============================================================================
 
 @dataclass(frozen=True)
@@ -281,10 +281,10 @@ def _load_state() -> dict:
     """Load the sequential cursor state from disk.
 
     Returns a dict with keys:
-        ``next_step``     : int  — index of the step to submit next
-        ``last_job_id``   : int  — SLURM job ID of the most recently submitted
+        ``next_step``     : int  - index of the step to submit next
+        ``last_job_id``   : int  - SLURM job ID of the most recently submitted
                                    real job (0 if none yet)
-        ``total_steps``   : int  — total number of steps in the plan (60)
+        ``total_steps``   : int  - total number of steps in the plan (60)
     """
     if _STATE_PATH.exists():
         return json.loads(_STATE_PATH.read_text(encoding="utf-8"))
@@ -391,7 +391,7 @@ def _build_sbatch_args(
         log_stem:          Stem for stdout/stderr log filenames.
         dependency_job_id: If set, add ``--dependency=<type>:<id>``.
         dependency_type:   ``"afterok"`` (real jobs) or ``"afterany"``
-                           (manager — must wake up even on failure).
+                           (manager - must wake up even on failure).
 
     Returns:
         List of sbatch flag strings.
@@ -668,7 +668,7 @@ def _print_plan(plan: List[Step]) -> None:
     """Log the full sequential execution plan."""
     logger.info("")
     logger.info("=" * 72)
-    logger.info("SEQUENTIAL GRID SEARCH PLAN  —  %d steps (1 job at a time)", len(plan))
+    logger.info("SEQUENTIAL GRID SEARCH PLAN  -  %d steps (1 job at a time)", len(plan))
     logger.info("=" * 72)
     for step in plan:
         logger.info("  %3d.  [%-7s]  %s", step.index + 1, step.stage, step.key)
@@ -683,7 +683,7 @@ def _configure_logging(level_name: str) -> None:
     level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        format="%(asctime)s [%(levelname)-8s] %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
@@ -774,7 +774,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     gpu_part = args.gpu_partition
     cpu_part = args.cpu_partition or gpu_part
 
-    logger.info("Vessel Detection — Sequential Grid Search Manager")
+    logger.info("Vessel Detection - Sequential Grid Search Manager")
     logger.info("  GPU partition : %s", gpu_part)
     logger.info("  CPU partition : %s", cpu_part)
     if args.dry_run:
@@ -786,7 +786,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             _STATE_PATH.unlink()
             logger.info("State file removed: %s", _STATE_PATH)
         else:
-            logger.info("No state file found — nothing to reset.")
+            logger.info("No state file found - nothing to reset.")
 
     # ── Build plan ────────────────────────────────────────────────────────────
     runs = build_grid()
@@ -829,7 +829,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dry_run=args.dry_run,
             )
         else:
-            # Manager woke up after a real job finished — submit next step.
+            # Manager woke up after a real job finished - submit next step.
             done = not submit_next_step(
                 plan=plan,
                 state=state,

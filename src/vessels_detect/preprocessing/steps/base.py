@@ -41,7 +41,7 @@ class BaseStep(ABC):
     key used in the YAML ``stages`` list and ``STEP_REGISTRY`` mapping.
     """
 
-    #: Registry key — must be unique across all steps.
+    #: Registry key - must be unique across all steps.
     NAME: str = ""
 
     @abstractmethod
@@ -55,6 +55,6 @@ class BaseStep(ABC):
                 Python scalars / dicts / lists as parsed from YAML.
 
         Raises:
-            Any exception is allowed to propagate — the manager will catch
+            Any exception is allowed to propagate - the manager will catch
             it, log it, and abort the pipeline.
         """

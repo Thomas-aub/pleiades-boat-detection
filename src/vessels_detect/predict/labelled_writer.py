@@ -88,7 +88,7 @@ def write_labelled_geojson(
         gt_cid = _find_gt_class(pred, labelled_gts)
         features.append(_prediction_feature(pred, gt_class_id=gt_cid, deleted=False))
 
-    # GT annotations (FN only — TPs are already represented by a prediction).
+    # GT annotations (FN only - TPs are already represented by a prediction).
     for gt in labelled_gts:
         if gt.label == "FN":
             features.append(_gt_feature(gt))

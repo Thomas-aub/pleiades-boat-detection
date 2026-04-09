@@ -14,11 +14,11 @@
 #
 # Pipeline stages (set enabled: false to skip any stage)
 # -------------------------------------------------------
-#   1  radiometric   — percentile stretch + gamma on the full GeoTIFF
-#   2  spatial       — Upsampling via windowed rasterio I/O
-#   3  annotations   — GeoJSON OBB → YOLO OBB (global normalisation)
-#   4  split         — image-level train / val / test (zero spatial leakage)
-#   5  tiling        — raw GeoTIFF tiling + YOLO OBB label projection
+#   1  radiometric   - percentile stretch + gamma on the full GeoTIFF
+#   2  spatial       - Upsampling via windowed rasterio I/O
+#   3  annotations   - GeoJSON OBB → YOLO OBB (global normalisation)
+#   4  split         - image-level train / val / test (zero spatial leakage)
+#   5  tiling        - raw GeoTIFF tiling + YOLO OBB label projection
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ paths:
   tiled_dir:        "data/dataset/tiled"         # stage 5 output  {train,val,test}/
 
 # ---------------------------------------------------------------------------
-# Stage registry — controls which stages are executed and in what order.
+# Stage registry - controls which stages are executed and in what order.
 # Remove or set enabled: false to skip a stage without changing the code.
 # ---------------------------------------------------------------------------
 stages:
@@ -55,7 +55,7 @@ stages:
     enabled: true
 
 # ---------------------------------------------------------------------------
-# Stage 1 — Radiometric normalisation  (src/preprocessing/steps/radiometric.py)
+# Stage 1 - Radiometric normalisation  (src/preprocessing/steps/radiometric.py)
 # ---------------------------------------------------------------------------
 radiometric:
   # Percentile clipping: pixel values below lo_pct or above hi_pct are clamped.
@@ -75,16 +75,16 @@ radiometric:
   compress: "lzw"
 
 # ---------------------------------------------------------------------------
-# Stage 2 — Spatial upsampling  (src/preprocessing/steps/spatial.py)
+# Stage 2 - Spatial upsampling  (src/preprocessing/steps/spatial.py)
 # ---------------------------------------------------------------------------
 spatial:
   upscale_ratio: 2
 
   # Upsampling interpolation algorithm.
   # Options (rasterio Resampling enum names):
-  #   lanczos  — sharpest edges, best for downsampling, slight ringing risk
-  #   cubic    — good quality, no ringing  (recommended for upsampling)
-  #   bilinear — fast, noticeably softer
+  #   lanczos  - sharpest edges, best for downsampling, slight ringing risk
+  #   cubic    - good quality, no ringing  (recommended for upsampling)
+  #   bilinear - fast, noticeably softer
   interpolation: "cubic"
 
   # Tile size used internally for windowed rasterio I/O.
@@ -95,14 +95,14 @@ spatial:
   compress: "lzw"
 
 # ---------------------------------------------------------------------------
-# Stage 3 — Annotation conversion  (src/preprocessing/steps/annotations.py)
+# Stage 3 - Annotation conversion  (src/preprocessing/steps/annotations.py)
 # ---------------------------------------------------------------------------
 annotations:
   # Minimum fraction of an OBB's area that must be visible inside the
   # image boundaries for the annotation to be included.
   # For global images this is rarely triggered (only for objects right
   # on the edge of the sensor swath).
-  min_visible: 0.00
+  min_visible: 0.10
 
   # Minimum side length in pixels (in the output image space) for any OBB
   # axis.  Boxes smaller than this are symmetrically elongated from their
@@ -122,11 +122,11 @@ annotations:
     8: 0
     10: 0
 
-  # GeoJSON class IDs to discard entirely — no label line is written.
+  # GeoJSON class IDs to discard entirely - no label line is written.
   skip_classes: [9, 11]
 
 # ---------------------------------------------------------------------------
-# Stage 4 — Image-level train / val / test split  (src/preprocessing/steps/split.py)
+# Stage 4 - Image-level train / val / test split  (src/preprocessing/steps/split.py)
 # ---------------------------------------------------------------------------
 split:
   train_ratio: 0.70
@@ -146,12 +146,12 @@ split:
   copy: false
 
 # ---------------------------------------------------------------------------
-# Stage 5 — Raw GeoTIFF tiling  (src/preprocessing/steps/tiling.py)
+# Stage 5 - Raw GeoTIFF tiling  (src/preprocessing/steps/tiling.py)
 # ---------------------------------------------------------------------------
 # Reads the split dataset produced by Stage 4 and slices every selected
 # split into fixed-size GeoTIFF patches with matching YOLO OBB label files.
 #
-# No radiometric or spatial processing is applied — raw pixel values, source
+# No radiometric or spatial processing is applied - raw pixel values, source
 # dtype, band count, CRS, and Affine transform are all preserved verbatim.
 #
 # Input layout (Stage 4 output):
@@ -172,7 +172,7 @@ tiling:
 
   # Output tile height and width in pixels.  Edge tiles are padded with the
   # source nodata value (or 0 when nodata is not defined) to this exact size.
-  # No radiometric processing is applied — raw pixel values are preserved.
+  # No radiometric processing is applied - raw pixel values are preserved.
   tile_size: 1536
 
   # Pixel overlap between adjacent tiles in both axes.
@@ -187,7 +187,7 @@ tiling:
   # corresponding YOLO label line to be written to that tile's label file.
   # 0.00 → keep every annotation that touches the tile.
   # 0.10 → discard annotations that are less than 10 % visible in the tile.
-  min_visible_frac: 0.15
+  min_visible_frac: 0.10
 
   # Subdirectory names inside tiled_dir for tile images and label files.
   # Changing these lets you redirect outputs without touching the code.
