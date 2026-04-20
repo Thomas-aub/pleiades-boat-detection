@@ -291,8 +291,8 @@ def transform_neo_to_phr(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    input_folder  = Path("/home/thomas/Documents/code/pleiades-boat-detection/data/raw")
-    output_folder = Path("/home/thomas/Documents/code/pleiades-boat-detection/data/raw_50_hr")
+    input_folder  = Path("data/scoring/diff/tmp/before")
+    output_folder = Path("data/scoring/diff/tmp")
     output_folder.mkdir(parents=True, exist_ok=True)
 
     tif_files = list(input_folder.glob("*.tif"))
