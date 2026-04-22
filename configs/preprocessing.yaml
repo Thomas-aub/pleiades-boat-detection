@@ -30,8 +30,8 @@ paths:
   radiometric_dir:  "data/processed/radiometric" # stage 1 output
   spatial_dir:      "data/processed/spatial"     # stage 2 output
   labels_dir:       "data/processed/labels"      # stage 3 output (pre-split .txt)
-  dataset_dir:      "data/dataset"               # stage 4 output  {train,val,test}/
-  tiled_dir:        "data/dataset/tiled"         # stage 5 output  {train,val,test}/
+  dataset_dir:      "data/eval/dataset"               # stage 4 output  {train,val,test}/
+  tiled_dir:        "data/eval/dataset/tiled"         # stage 5 output  {train,val,test}/
 
 # ---------------------------------------------------------------------------
 # Stage registry - controls which stages are executed and in what order.
@@ -40,19 +40,19 @@ paths:
 stages:
   - id: 1
     name: radiometric
-    enabled: true
+    enabled: false
   - id: 2
     name: spatial
-    enabled: true
+    enabled: false
   - id: 3
     name: annotations
-    enabled: true
+    enabled: false
   - id: 4
     name: split
-    enabled: true
+    enabled: false
   - id: 5
     name: tiling
-    enabled: true
+    enabled: false
 
 # ---------------------------------------------------------------------------
 # Stage 1 - Radiometric normalisation  (src/preprocessing/steps/radiometric.py)
@@ -166,19 +166,17 @@ tiling:
   # Which dataset splits to tile.  Must be a subset of the directories
   # created by Stage 4.  Remove any entry to skip that split entirely.
   splits:
-    - train
-    - val
     - test
 
   # Output tile height and width in pixels.  Edge tiles are padded with the
   # source nodata value (or 0 when nodata is not defined) to this exact size.
   # No radiometric processing is applied - raw pixel values are preserved.
-  tile_size: 1536
+  tile_size: 2048
 
   # Pixel overlap between adjacent tiles in both axes.
   # Effective stride = tile_size - overlap.
   # Set to 0 for non-overlapping tiles.
-  overlap: 64
+  overlap: 512
 
   # GeoTIFF compression for the output tile files.
   compress: "lzw"

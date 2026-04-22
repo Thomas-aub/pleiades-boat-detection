@@ -29,7 +29,7 @@ pipeline:
 # Model
 # ---------------------------------------------------------------------------
 model:
-  weights: "gs_best.pt"
+  weights: "50_best.pt"
 
   # Human-readable class names indexed by YOLO class_id.
   class_names:
@@ -65,7 +65,7 @@ paths:
 prediction:
   conf:   0.20   # per-tile confidence threshold; detections below are dropped
   iou:    0.20   # YOLO internal NMS IoU threshold (per-tile, NOT global NMS)
-  imgsz:  1024   # inference image size in pixels
+  imgsz:  2048   # inference image size in pixels
 
   # Global cross-tile NMS - removes duplicates from overlapping tiles.
   global_nms_iou: 0.20
@@ -98,7 +98,7 @@ postprocessing:
 # ---------------------------------------------------------------------------
 evaluation:
   # IoU threshold for TP / FP / FN matching.
-  iou_threshold: 0.20
+  iou_threshold: 0.25
 
   # When true, write a final labelled GeoJSON per image with
   # label ∈ {TP, FP, FN} and a "deleted" flag for postprocessing removals.
