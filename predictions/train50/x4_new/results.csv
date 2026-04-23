@@ -1,0 +1,5 @@
+Class,TP,FP,FN,Precision,Recall,F1,Bias (%)
+Pirogue,85,83,92,0.506,0.4802,0.4928,-5.08
+Double_hulled_Pirogue,68,44,22,0.6071,0.7556,0.6733,24.44
+Small_Motorboat,12,4,8,0.75,0.6,0.6667,-20.0
+ALL_CLASSES,165,131,122,0.5574,0.5749,0.5660,3.14

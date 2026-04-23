@@ -81,6 +81,7 @@ class Evaluator:
         eval_cfg:          dict  = cfg.get("evaluation", {})
 
         iou_threshold:    float = eval_cfg.get("iou_threshold", 0.50)
+        allow_mix_dugout: bool  = eval_cfg.get("allow_mix_dugout", False)  # Added
         generate_geojson: bool  = eval_cfg.get("generate_geojson", True)
         geojson_indent:   int   = eval_cfg.get("geojson_indent", 2)
 
@@ -119,7 +120,7 @@ class Evaluator:
 
             # ── Match ──────────────────────────────────────────────────────
             labelled_preds, labelled_gts = match(
-                post_preds, gt_boxes, iou_threshold
+                post_preds, gt_boxes, iou_threshold, allow_mix_dugout=allow_mix_dugout
             )
 
             # ── Accumulate counts ──────────────────────────────────────────

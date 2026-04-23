@@ -52,7 +52,7 @@ stages:
     enabled: false
   - id: 5
     name: tiling
-    enabled: true
+    enabled: false
 
 # ---------------------------------------------------------------------------
 # Stage 1 - Radiometric normalisation  (src/preprocessing/steps/radiometric.py)

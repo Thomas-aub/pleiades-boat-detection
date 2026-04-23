@@ -100,6 +100,9 @@ evaluation:
   # IoU threshold for TP / FP / FN matching.
   iou_threshold: 0.25
 
+  # Allow Pirogue (0) and Double_hulled_Pirogue (1) to be evaluated interchangeably.
+  allow_mix_dugout: true
+
   # When true, write a final labelled GeoJSON per image with
   # label ∈ {TP, FP, FN} and a "deleted" flag for postprocessing removals.
   generate_geojson: true

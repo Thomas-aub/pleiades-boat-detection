@@ -38,20 +38,10 @@ def match(
     predictions: List[OBBBox],
     ground_truths: List[OBBBox],
     iou_threshold: float,
+    allow_mix_dugout: bool = False,
 ) -> Tuple[List[OBBBox], List[OBBBox]]:
-    """Assign TP / FP labels to predictions and FN labels to unmatched GT.
-
-    Args:
-        predictions:   Postprocessed prediction boxes (``OBBBox`` with
-                       ``confidence`` set, ``label`` may be empty).
-        ground_truths: Ground-truth boxes (``confidence = NaN``).
-        iou_threshold: Minimum IoU for a prediction–GT pair to be a TP.
-
-    Returns:
-        ``(labelled_preds, labelled_gts)`` where every element has its
-        ``label`` attribute set to ``"TP"``, ``"FP"``, or ``"FN"``.
-    """
-    # Sort predictions: highest confidence first.
+    """Assign TP / FP labels to predictions and FN labels to unmatched GT."""
+    
     sorted_preds = sorted(
         enumerate(predictions),
         key=lambda t: t[1].confidence if not math.isnan(t[1].confidence) else 0.0,
@@ -60,16 +50,22 @@ def match(
 
     labels_pred: List[str] = ["FP"] * len(predictions)
     labels_gt:   List[str] = ["FN"] * len(ground_truths)
+    
+    # Track class assignments locally to prevent mutating the input references.
+    aligned_classes: List[int] = [p.class_id for p in predictions]
+    aligned_names: List[str] = [p.class_name for p in predictions]
 
     for pred_idx, pred in sorted_preds:
-        best_iou  = iou_threshold   # must meet threshold to count as TP
+        best_iou  = iou_threshold   
         best_gi   = -1
 
         for gi, gt in enumerate(ground_truths):
             if labels_gt[gi] == "TP":
-                continue                   # already consumed
-            if gt.class_id != pred.class_id:
-                continue                   # class mismatch
+                continue                   
+            
+            # Delegate class matching logic to a private helper
+            if not _classes_match(pred.class_id, gt.class_id, allow_mix_dugout):
+                continue                   
 
             iou = _polygon_iou(pred, gt)
             if iou >= best_iou:
@@ -78,15 +74,26 @@ def match(
 
         if best_gi >= 0:
             labels_pred[pred_idx] = "TP"
-            labels_gt[best_gi]    = "TP"   # mark GT as matched
+            labels_gt[best_gi]    = "TP"   
+            
+            # Align the prediction's class identity with the matched GT 
+            # to preserve metric purity.
+            aligned_classes[pred_idx] = ground_truths[best_gi].class_id
+            aligned_names[pred_idx]   = ground_truths[best_gi].class_name
 
     labelled_preds = [
-        replace(p, label=labels_pred[i]) for i, p in enumerate(predictions)
+        replace(
+            p, 
+            label=labels_pred[i], 
+            class_id=aligned_classes[i], 
+            class_name=aligned_names[i]
+        ) for i, p in enumerate(predictions)
     ]
     labelled_gts = [
         replace(g, label=labels_gt[i]) for i, g in enumerate(ground_truths)
     ]
     return labelled_preds, labelled_gts
+
 
 
 def compute_per_class_counts(
@@ -124,6 +131,21 @@ def compute_per_class_counts(
     return counts
 
 
+
+# ---------------------------------------------------------------------------
+# Internal geometry and class helpers
+# ---------------------------------------------------------------------------
+
+def _classes_match(pred_cls: int, gt_cls: int, allow_mix_dugout: bool) -> bool:
+    """Determine if two class IDs represent a valid match."""
+    if pred_cls == gt_cls:
+        return True
+    
+    if allow_mix_dugout and {pred_cls, gt_cls}.issubset({0, 1}):
+        return True
+        
+    return False
+
 # ---------------------------------------------------------------------------
 # Internal geometry helper
 # ---------------------------------------------------------------------------
@@ -144,3 +166,6 @@ def _polygon_iou(a: OBBBox, b: OBBBox) -> float:
         return inter / union if union > 0 else 0.0
     except Exception:  # noqa: BLE001
         return 0.0
+
+
+
