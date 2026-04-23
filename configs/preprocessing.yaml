@@ -25,11 +25,11 @@
 # I/O paths  (relative to project root, or absolute)
 # ---------------------------------------------------------------------------
 paths:
-  raw_dir:          "data/raw"                   # source GeoTIFFs + GeoJSONs
-  processed_dir:    "data/processed"             # root for all processed artefacts
-  radiometric_dir:  "data/processed/radiometric" # stage 1 output
-  spatial_dir:      "data/processed/spatial"     # stage 2 output
-  labels_dir:       "data/processed/labels"      # stage 3 output (pre-split .txt)
+  raw_dir:          "data/eval/raw"                   # source GeoTIFFs + GeoJSONs
+  processed_dir:    "data/eval/processed"             # root for all processed artefacts
+  radiometric_dir:  "data/eval/processed/radiometric" # stage 1 output
+  spatial_dir:      "data/eval/processed/spatial"     # stage 2 output
+  labels_dir:       "data/eval/processed/labels"      # stage 3 output (pre-split .txt)
   dataset_dir:      "data/eval/dataset"               # stage 4 output  {train,val,test}/
   tiled_dir:        "data/eval/dataset/tiled"         # stage 5 output  {train,val,test}/
 
@@ -52,7 +52,7 @@ stages:
     enabled: false
   - id: 5
     name: tiling
-    enabled: false
+    enabled: true
 
 # ---------------------------------------------------------------------------
 # Stage 1 - Radiometric normalisation  (src/preprocessing/steps/radiometric.py)

@@ -29,7 +29,7 @@ pipeline:
 # Model
 # ---------------------------------------------------------------------------
 model:
-  weights: "50_best.pt"
+  weights: "weights/50_x4_best.pt"
 
   # Human-readable class names indexed by YOLO class_id.
   class_names:
