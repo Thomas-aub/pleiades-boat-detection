@@ -189,12 +189,6 @@ def config_neo_to_phr() -> PipelineConfig:
     config.spectral.srf_noise_std.min = 0.005
     config.spectral.srf_noise_std.max = 0.02
 
-    # No systematic per-band scale offset: public documentation reports no
-    # known gain imbalance between Neo RGB and PHR RGB output channels.
-    # A deterministic ramp would introduce a colour cast with no physical
-    # grounding and was identified as a likely contributor to the KID gap.
-    config.spectral.band_scale_factors = [1.0, 1.0, 1.0]
-
     # -- Spatial --------------------------------------------------------
 
     # Neo PMS GSD: 0.3 m — NEO-UG Table 4.
