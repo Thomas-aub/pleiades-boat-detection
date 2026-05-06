@@ -34,9 +34,8 @@ model:
   # Human-readable class names indexed by YOLO class_id.
   class_names:
     0: Pirogue
-    1: Double_hulled_Pirogue
-    2: Small_Motorboat
-    3: Other_boat
+    1: Small_Motorboat
+    2: Other_boat
 
 # ---------------------------------------------------------------------------
 # I/O paths

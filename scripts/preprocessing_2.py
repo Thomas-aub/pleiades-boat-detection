@@ -1,43 +1,63 @@
 """
-scripts/preprocessing.py
------------------------------
-Thin CLI wrapper for the SAHI-optimised Global Preprocessing Pipeline.
+scripts/preprocessing_2.py
+---------------------------
+CLI wrapper for the SAHI-optimised Global Preprocessing Pipeline — v2.
 
-This script is the sole entry-point for human operators and CI jobs.  All
-orchestration logic lives in :mod:`src.vessels_detect.preprocessing.manager`;
-this file only handles argument parsing, logging setup, and the process
-exit code.
+This version replaces the old Stage 4 (image-level split) + Stage 5 (tiling)
+workflow with a unified **Stage 6 (tiled_split)** that:
+
+1. Tiles every processed GeoTIFF into **non-overlapping** patches.
+2. Splits the tile pool into ``train`` (80 %) and ``val`` (20 %), ensuring
+   every source image contributes proportionally to both sets.
+3. Shards the train set into 8 numbered sub-folders, again mixing tiles from
+   all source images across every shard.
+4. Writes a ``metadata.csv`` summarising source-image distribution, per-class
+   object counts, and tile counts for every output folder.
+
+Output layout
+~~~~~~~~~~~~~
+::
+
+    data/<number>/
+      train/
+        1/  images/*.tif  labels/*.txt
+        2/  …
+        …
+        8/  images/*.tif  labels/*.txt
+      val/
+        images/*.tif
+        labels/*.txt
+      metadata.csv
 
 Pipeline stages
 ~~~~~~~~~~~~~~~
 ::
 
-    1 radiometric           - percentile stretch + gamma on the full GeoTIFF
-    2 spatial               - Upsampling via windowed rasterio I/O
-    3 annotations           - GeoJSON OBB → YOLO OBB (global normalisation)
-    4 split                 - image-level train / val / test (zero spatial leakage)
-    5 tiling                - raw GeoTIFF tiling + YOLO OBB label projection
-    6 background_reduction  - move excess background tiles to keep ratio ≤ target
+    1 radiometric - percentile stretch + gamma on the full GeoTIFF
+    2 spatial     - Upsampling via windowed rasterio I/O
+    3 annotations - GeoJSON OBB → YOLO OBB (global normalisation)
+    6 tiled_split - non-overlapping tiling + train/val split + sharding
+                    + metadata CSV
 
 Usage
 ~~~~~
 Run all enabled stages::
 
-    PYTHONPATH=. python scripts/preprocessing.py
+    PYTHONPATH=. python scripts/preprocessing_2.py
 
 Run specific stages only::
 
-    PYTHONPATH=. python scripts/preprocessing.py --stages radiometric spatial
+    PYTHONPATH=. python scripts/preprocessing_2.py --stages radiometric spatial
 
 Use a custom config::
 
-    PYTHONPATH=. python scripts/preprocessing.py \\
-        --config configs/my_experiment.yaml \\
-        --stages annotations split tiling background_reduction
+    PYTHONPATH=. python scripts/preprocessing_2.py \\
+        --config configs/preprocessing_2.yaml \\
+        --stages annotations tiled_split
 
 Adjust log verbosity::
 
-    PYTHONPATH=. python scripts/preprocessing.py --log-level DEBUG
+    PYTHONPATH=. python scripts/preprocessing_2.py --log-level DEBUG
 """
 
 from __future__ import annotations
@@ -83,17 +103,20 @@ def _build_parser() -> argparse.ArgumentParser:
         Configured :class:`argparse.ArgumentParser`.
     """
     parser = argparse.ArgumentParser(
-        description="SAHI-optimised Global Preprocessing Pipeline for vessel detection.",
+        description=(
+            "SAHI-optimised Global Preprocessing Pipeline v2 — "
+            "tile-first split with train sharding."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/preprocessing.yaml"),
+        default=Path("configs/preprocessing_2.yaml"),
         metavar="PATH",
         help="Path to the YAML configuration file "
-             "(default: configs/preprocessing.yaml).",
+             "(default: configs/preprocessing_2.yaml).",
     )
     parser.add_argument(
         "--stages",
@@ -102,9 +125,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Stage names to execute, overriding the 'enabled' flags in the "
-            "config.  Valid names: radiometric, spatial, annotations, split, "
-            "tiling, background_reduction.  "
-            "Default: all enabled stages from the config."
+            "config.  Valid names: radiometric, spatial, annotations, "
+            "tiled_split.  Default: all enabled stages from the config."
         ),
     )
     parser.add_argument(
@@ -133,13 +155,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
     _configure_logging(args.log_level)
 
-    logger.info("preprocessing.py - SAHI Global Preprocessing Pipeline")
+    logger.info("preprocessing_2.py - SAHI Global Preprocessing Pipeline v2")
     logger.info("Config : %s", args.config.resolve())
     if args.stages:
         logger.info("Stage override : %s", args.stages)
 
-    # Import here so logging is configured before any module-level loggers fire.
-    from src.vessels_detect.preprocessing.manager import PreprocessingManager
+    # Import after logging is configured so module-level loggers pick up the
+    # correct level.
+    from src.vessels_detect.preprocessing.manager_2 import PreprocessingManager
 
     manager = PreprocessingManager(config_path=args.config)
     return manager.run(stages_override=args.stages)

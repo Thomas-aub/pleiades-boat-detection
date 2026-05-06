@@ -14,11 +14,12 @@
 #
 # Pipeline stages (set enabled: false to skip any stage)
 # -------------------------------------------------------
-#   1  radiometric   - percentile stretch + gamma on the full GeoTIFF
-#   2  spatial       - Upsampling via windowed rasterio I/O
-#   3  annotations   - GeoJSON OBB → YOLO OBB (global normalisation)
-#   4  split         - image-level train / val / test (zero spatial leakage)
-#   5  tiling        - raw GeoTIFF tiling + YOLO OBB label projection
+#   1  radiometric           - percentile stretch + gamma on the full GeoTIFF
+#   2  spatial               - Upsampling via windowed rasterio I/O
+#   3  annotations           - GeoJSON OBB → YOLO OBB (global normalisation)
+#   4  split                 - image-level train / val / test (zero spatial leakage)
+#   5  tiling                - raw GeoTIFF tiling + YOLO OBB label projection
+#   6  background_reduction  - move excess background tiles to keep ratio ≤ target
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,9 @@ stages:
     enabled: false
   - id: 5
     name: tiling
+    enabled: false
+  - id: 6
+    name: background_reduction
     enabled: false
 
 # ---------------------------------------------------------------------------
@@ -114,13 +118,13 @@ annotations:
   class_map:
     0: 0   # Pirogue
     1: 0   # Double_hulled_Pirogue
-    2: 1   # Small_Motorboat
-    3: 2   # Medium_Motorboat
-    4: 2   # Large_Motorboat
-    5: 2   # Sailing_Boat
+    2: 1   # Small_Motorboat 
+    3: 2   # Medium_Motorboat  # (merged into Large_Motorboat)
+    4: 2   # Large_Motorboat  # (merged into Large_Motorboat)
+    5: 2   # Sailing_Boat  # (merged into Large_Motorboat)
     6: 2   # (merged into Large_Motorboat)
-    8: 0
-    10: 0
+    8: 0   # (merged into Pirogue)
+    10: 0  # (merged into Pirogue)
 
   # GeoJSON class IDs to discard entirely - no label line is written.
   skip_classes: [9, 11]
@@ -192,3 +196,51 @@ tiling:
   # Default values match the standard Ultralytics YOLO dataset layout.
   images_subdir: "images"
   labels_subdir: "labels"
+
+# ---------------------------------------------------------------------------
+# Stage 6 - Background tile reduction  (src/preprocessing/steps/background_reduction.py)
+# ---------------------------------------------------------------------------
+# Reads the tiled dataset produced by Stage 5 and relocates excess background
+# (empty-label) tiles to a 'moved/' subdirectory, ensuring background tiles
+# make up at most target_bg_ratio of each processed split.
+#
+# Files are MOVED, not deleted - the operation is fully reversible by moving
+# them back from the moved/ tree.  Delete any .cache files before restarting
+# YOLO training after running this stage.
+#
+# The test split is excluded by default because test-set statistics should
+# reflect the real data distribution.
+#
+# Input layout (Stage 5 output):
+#   tiled_dir/{images_subdir}/{split}/*.tif
+#   tiled_dir/{labels_subdir}/{split}/*.txt
+#
+# Output layout:
+#   tiled_dir/{images_subdir}/{split}/         <retained tiles>
+#   tiled_dir/{labels_subdir}/{split}/         <retained labels>
+#   tiled_dir/{moved_subdir}/{images_subdir}/{split}/  <excess background tiles>
+#   tiled_dir/{moved_subdir}/{labels_subdir}/{split}/  <excess background labels>
+# ---------------------------------------------------------------------------
+background_reduction:
+  # Which tiled splits to process.  The test split is intentionally excluded
+  # by default to preserve the true class distribution for evaluation.
+  splits:
+    - train
+    - val
+
+  # Maximum allowed fraction of background (empty-label) tiles in the final
+  # dataset.  Must be in the open interval (0.0, 1.0).
+  # 0.15 → at most 15 % of tiles may be background after reduction.
+  target_bg_ratio: 0.15
+
+  # Seed for the random shuffle applied before selecting tiles to move.
+  # A fixed seed guarantees the same subset is retained on every rerun.
+  random_seed: 42
+
+  # Subdirectory names must match the values used in Stage 5 (tiling).
+  images_subdir: "images"
+  labels_subdir: "labels"
+
+  # Name of the top-level subdirectory inside tiled_dir where excess
+  # background tiles are relocated.
+  moved_subdir: "moved"
