@@ -1,274 +1,261 @@
-import random
-import pandas as pd
+"""
+mixtures.py — Tile collection and degradation-mixture assignment.
+
+Produces a CSV mapping every valid GeoTIFF tile to N randomised degradation
+mixtures (PSF σ, SNR dB, step order) for sensor-emulation training.
+
+Pipeline (Orchestrator-Worker):
+    generate_pool → collect_tiles → filter_nodata
+        → [reduce_background] → assign_mixtures → export_csv
+"""
+from __future__ import annotations
+
 import json
 import logging
+import random
 from pathlib import Path
+from typing import Dict, List
+
+from pyproj import Transformer
+
+import numpy as np
+import pandas as pd
 import rasterio
+from rasterio.windows import Window
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
-log = logging.getLogger(__name__)
+_IMAGE_GLOBS        = ("*.tif", "*.tiff")
 
 
-def compute_tiling_native_step(input_directory: str, tile_size: int):
-    """
-    Logic:
-    1. Reads TIF headers (Native CRS).
-    2. Computes the distance in meters for 'tile_size' pixels (step = tile_size * GSD).
-    3. Calculates corner coordinates by applying this meter-step from the origin.
-    4. Outputs borders and corners in the original coordinate system.
-    """
-    input_dir = Path(input_directory)
-    tif_files = sorted(input_dir.glob("*.tif"))
-    
-    all_records = []
-    dots_features = []
-    lines_features = []
+# ============================================================================
+# Tools — pure functions
+# ============================================================================
 
-    for tif_path in tif_files:
-        log.info(f"Processing: {tif_path.name}")
-        
-        try:
-            with rasterio.open(tif_path) as ds:
-                if ds.crs is None:
-                    log.warning(f"Skipping {tif_path.name}: Missing CRS.")
-                    continue
-                
-                # Image metadata
-                transform = ds.transform
-                width_px = ds.width
-                height_px = ds.height
-                
-                # Native GSD (Resolution)
-                gsd_x = abs(transform.a)
-                gsd_y = abs(transform.e)
-                
-                # Compute length in meters for the tile_size
-                step_x_meters = tile_size * gsd_x
-                step_y_meters = tile_size * gsd_y
-                
-                # Iterate through the image pixels to compute native CRS coordinates
-                for row_idx in range(0, height_px, tile_size):
-                    for col_idx in range(0, width_px, tile_size):
-                        
-                        # Determine current tile pixel boundaries (handling edge clipping)
-                        c0, r0 = col_idx, row_idx
-                        c1 = min(col_idx + tile_size, width_px)
-                        r1 = min(row_idx + tile_size, height_px)
-
-                        # Transform pixel indices to Native CRS coordinates
-                        # top-left corner
-                        left, top = transform * (c0, r0)
-                        # bottom-right corner
-                        right, bottom = transform * (c1, r1)
-                        
-                        # Set corners (TL, TR, BR, BL)
-                        xs = [left, right, right, left]
-                        ys = [top, top, bottom, bottom]
-                        
-                        tile_id = f"{row_idx}_{col_idx}"
-                        
-                        # --- 1. CSV RECORD ---
-                        all_records.append({
-                            "image_id": tif_path.name,
-                            "tile_id": tile_id,
-                            "min_x": min(xs),
-                            "max_x": max(xs),
-                            "min_y": min(ys),
-                            "max_y": max(ys),
-                            "tile_size_px": tile_size,
-                            "length_x_meters": step_x_meters,
-                            "length_y_meters": step_y_meters,
-                            "native_crs": ds.crs.to_string()
-                        })
-
-                        # --- 2. GEOJSON DOTS (Corners) ---
-                        labels = ["top_left", "top_right", "bottom_right", "bottom_left"]
-                        for i in range(4):
-                            dots_features.append({
-                                "type": "Feature",
-                                "properties": {
-                                    "image_id": tif_path.name, 
-                                    "tile_id": tile_id, 
-                                    "corner": labels[i]
-                                },
-                                "geometry": {"type": "Point", "coordinates": [xs[i], ys[i]]}
-                            })
-
-                        # --- 3. GEOJSON BORDERS (Lines) ---
-                        lines_features.append({
-                            "type": "Feature",
-                            "properties": {"image_id": tif_path.name, "tile_id": tile_id},
-                            "geometry": {
-                                "type": "LineString", 
-                                "coordinates": [
-                                    [xs[0], ys[0]], [xs[1], ys[1]], 
-                                    [xs[2], ys[2]], [xs[3], ys[3]], [xs[0], ys[0]]
-                                ]
-                            }
-                        })
-                        
-        except Exception as e:
-            log.error(f"Error processing {tif_path.name}: {e}")
-
-    # Export results
-    if all_records:
-        pd.DataFrame(all_records).to_csv("tile_bboxes_native.csv", index=False)
-        
-        with open("tile_corners_native.geojson", "w") as f:
-            json.dump({"type": "FeatureCollection", "features": dots_features}, f)
-            
-        with open("tile_borders_native.geojson", "w") as f:
-            json.dump({"type": "FeatureCollection", "features": lines_features}, f)
-        
-        log.info(f"Done! Created tile bboxes based on {tile_size}px ({step_x_meters:.2f}m) steps.")
-    else:
-        log.warning("No data produced.")
+def _load_annotations(labels_dir: Path, image_stem: str) -> List[List[tuple]]:
+    """Load polygon coordinate rings (WGS84) from the GeoJSON for this image."""
+    p = labels_dir / f"{image_stem}.geojson"
+    if not p.exists():
+        return []
+    return [f["geometry"]["coordinates"][0]
+            for f in json.loads(p.read_text(encoding="utf-8"))["features"]]
 
 
+def _tile_has_annotation(annots: List[List[tuple]], tile: dict, tf: Transformer) -> bool:
+    """Return True if any annotation centroid (reprojected to native CRS) falls inside the tile bbox."""
+    for ring in annots:
+        cx = sum(c[0] for c in ring) / len(ring)
+        cy = sum(c[1] for c in ring) / len(ring)
+        x, y = tf.transform(cx, cy)
+        if tile["min_x"] <= x <= tile["max_x"] and tile["min_y"] <= y <= tile["max_y"]:
+            return True
+    return False
 
-def generate_image_degradation_mixtures(psf_range, snr_range, num_mixtures):
-    """Generates the global pool of randomized degradation mixtures."""
-    mixtures = []
+
+def _bg_keep(n_pos: int, ratio: float) -> int:
+    """Return how many background tiles to retain given positives count and target ratio."""
+    return int(n_pos * ratio / (1.0 - ratio))
+
+
+def _tile_windows(tif_path: Path, tile_size: int, gsd_out: float) -> List[dict]:
+    """Enumerate all non-overlapping tile-metadata dicts for a single GeoTIFF."""
+    tiles = []
+    with rasterio.open(tif_path) as ds:
+        if ds.crs is None:
+            return tiles
+        t = ds.transform
+        gsd_x, gsd_y = abs(t.a), abs(t.e)
+        for row in range(0, ds.height, tile_size):
+            for col in range(0, ds.width, tile_size):
+                c1, r1        = min(col + tile_size, ds.width), min(row + tile_size, ds.height)
+                left, top     = t * (col, row)
+                right, bottom = t * (c1, r1)
+                tiles.append({
+                    "_tif_path":       tif_path,
+                    "_window":         Window(col, row, c1 - col, r1 - row),
+                    "image_id":        tif_path.name,
+                    "tile_id":         f"{row}_{col}",
+                    "min_x":           min(left, right),
+                    "max_x":           max(left, right),
+                    "min_y":           min(top, bottom),
+                    "max_y":           max(top, bottom),
+                    "tile_size_px":    tile_size,
+                    "length_x_meters": tile_size * gsd_x,
+                    "length_y_meters": tile_size * gsd_y,
+                    "native_crs":      ds.crs.to_string(),
+                    "GSD_input":       round((gsd_x + gsd_y) / 2.0, 4),
+                    "GSD_output":      gsd_out,
+                })
+    return tiles
+
+
+def _sample_mixture(psf: list, snr: list, i: int) -> dict:
+    """Sample one randomised degradation configuration (PSF σ, SNR dB, step order)."""
     steps = ["B", "D", "N"]
-    
-    for i in range(num_mixtures):
-        current_order = steps.copy()
-        random.shuffle(current_order)
-        
-        selected_snr = random.uniform(snr_range[0], snr_range[1])
-        selected_psf = random.uniform(psf_range[0], psf_range[1])
-        
-        mixture = {
-            "Transform_id": i,
-            "step_order": current_order,
-            "snr_db": round(selected_snr, 2),
-            "psf_size": round(selected_psf, 2)
-        }
-        mixtures.append(mixture)
-        
-    return mixtures
+    random.shuffle(steps)
+    return {
+        "Transform_id": i,
+        "step_order":   steps,
+        "snr_db":       round(random.uniform(*snr), 2),
+        "psf_size":     round(random.uniform(*psf), 2),
+    }
 
-def assign_mixtures_to_tiles(
-    psf_limits: list, 
-    snr_limits: list, 
-    n_mixtures: int, 
-    n_mixtures_per_tiles: int, 
-    input_directory: str, 
-    GSD_output: float, 
-    tile_size: int = 1024
-):
-    """
-    Reads TIFs, computes native tiling and input GSD, 
-    and randomly assigns mixtures to each tile.
-    Exports the result as a CSV.
-    """
-    # Safety check: Ensure we have enough mixtures in the pool to sample uniquely per tile
-    if n_mixtures_per_tiles > n_mixtures:
-        raise ValueError("n_mixtures_per_tiles cannot be greater than the total n_mixtures pool.")
 
-    # 1. Generate the global pool of mixtures
-    log.info(f"Generating global pool of {n_mixtures} mixtures...")
-    mixtures_pool = generate_image_degradation_mixtures(psf_limits, snr_limits, n_mixtures)
-    
-    input_dir = Path(input_directory)
-    tif_files = sorted(input_dir.glob("*.tif"))
-    
-    all_records = []
+def _build_record(tile: dict, mix: dict) -> dict:
+    """Merge tile metadata and one mixture dict into a single flat output row."""
+    return {
+        **{k: v for k, v in tile.items() if not k.startswith("_")},
+        "Transform_id": mix["Transform_id"],
+        "Order":        "".join(mix["step_order"]),
+        "SNR (dB)":     mix["snr_db"],
+        "PSF":          mix["psf_size"],
+    }
 
-    # 2. Iterate over the TIF files to compute tiles
-    for tif_path in tif_files:
-        log.info(f"Processing: {tif_path.name}")
-        
-        try:
-            with rasterio.open(tif_path) as ds:
-                if ds.crs is None:
-                    log.warning(f"Skipping {tif_path.name}: Missing CRS.")
+
+# ============================================================================
+# Workers
+# ============================================================================
+
+def generate_pool(cfg: dict) -> List[dict]:
+    """Generate a global pool of N randomised degradation mixtures."""
+    random.seed(cfg["random_seed"])
+    pool = [_sample_mixture(cfg["psf_limits"], cfg["snr_limits"], i)
+            for i in range(cfg["n_mixtures"])]
+    logger.info("Generated %d mixtures.", cfg["n_mixtures"])
+    return pool
+
+
+def collect_tiles(cfg: dict) -> List[dict]:
+    """Scan input directory and collect tile-metadata dicts from all GeoTIFFs."""
+    input_dir = Path(cfg["input_directory"])
+    tif_files = sorted(p for g in _IMAGE_GLOBS for p in input_dir.glob(g))
+    tiles = []
+    for tif in tif_files:
+        logger.info("Collecting tiles from %s...", tif.name)
+        tiles.extend(_tile_windows(tif, cfg["tile_size"], cfg["GSD_output"]))
+    logger.info("Collected %d tiles from %d file(s).", len(tiles), len(tif_files))
+    return tiles
+
+
+def filter_nodata(tiles: List[dict], cfg: dict) -> List[dict]:
+    """Drop tiles exceeding the nodata threshold or with uniform (zero-information) content."""
+    if cfg["max_nodata_pct"] >= 1.0:
+        return tiles
+
+    by_file: Dict[Path, List[dict]] = {}
+    for t in tiles:
+        by_file.setdefault(t["_tif_path"], []).append(t)
+
+    kept = []
+    for tif_path, group in by_file.items():
+        with rasterio.open(tif_path) as ds:
+            nd = ds.nodata or 0
+            for tile in group:
+                raw = ds.read(window=tile["_window"])
+                # Use first 3 bands (RGB) for nodata check if available
+                check_raw = raw[:3] if raw.shape[0] >= 3 else raw
+                nd_pct = np.all(check_raw == nd, axis=0).sum() / (raw.shape[1] * raw.shape[2])
+                
+                if nd_pct > cfg["max_nodata_pct"]:
                     continue
-                
-                transform = ds.transform
-                width_px = ds.width
-                height_px = ds.height
-                
-                # Compute Input GSD (mean of pixel width and height)
-                gsd_x = abs(transform.a)
-                gsd_y = abs(transform.e)
-                gsd_input = (gsd_x + gsd_y) / 2.0
-                
-                # Physical step sizes
-                step_x_meters = tile_size * gsd_x
-                step_y_meters = tile_size * gsd_y
-                
-                for row_idx in range(0, height_px, tile_size):
-                    for col_idx in range(0, width_px, tile_size):
-                        
-                        # Tile boundaries in pixel space
-                        c0, r0 = col_idx, row_idx
-                        c1 = min(col_idx + tile_size, width_px)
-                        r1 = min(row_idx + tile_size, height_px)
+                if (check_raw.max() == check_raw.min()):
+                    continue
+                kept.append(tile)
 
-                        # Convert to Native CRS coordinates
-                        left, top = transform * (c0, r0)
-                        right, bottom = transform * (c1, r1)
-                        
-                        xs = [left, right, right, left]
-                        ys = [top, top, bottom, bottom]
-                        
-                        tile_id = f"{row_idx}_{col_idx}"
-                        
-                        # 3. Independently select mixtures for THIS specific tile
-                        # Using random.sample ensures the same tile gets unique transforms from the pool
-                        selected_mixtures = random.sample(mixtures_pool, k=n_mixtures_per_tiles)
-                        
-                        # 4. Create a record for every selected mixture on this tile
-                        for mix in selected_mixtures:
-                            all_records.append({
-                                "image_id": tif_path.name,
-                                "tile_id": tile_id,
-                                "min_x": min(xs),
-                                "max_x": max(xs),
-                                "min_y": min(ys),
-                                "max_y": max(ys),
-                                "tile_size_px": tile_size,
-                                "length_x_meters": step_x_meters,
-                                "length_y_meters": step_y_meters,
-                                "native_crs": ds.crs.to_string(),
-                                "GSD_input": round(gsd_input, 4),
-                                "GSD_output": GSD_output,
-                                "Transform_id": mix["Transform_id"],
-                                "Order": " -> ".join(mix["step_order"]),
-                                "SNR (dB)": mix["snr_db"],
-                                "PSF": mix["psf_size"]
-                            })
-                            
-        except Exception as e:
-            log.error(f"Error processing {tif_path.name}: {e}")
+    logger.info("Nodata filter: kept %d/%d tiles.", len(kept), len(tiles))
+    return kept
 
-    # 5. Export to CSV
-    if all_records:
-        df = pd.DataFrame(all_records)
-        output_filename = "tile_mixture_assignments.csv"
-        df.to_csv(output_filename, index=False)
-        log.info(f"Successfully generated {len(df)} rows and saved to {output_filename}")
-        return df
-    else:
-        log.warning("No data was produced.")
-        return None
+
+def reduce_background(tiles: List[dict], cfg: dict) -> List[dict]:
+    """Cap background-tile fraction at cfg['target_bg_ratio'] using per-image GeoJSON label files."""
+    if not cfg.get("labels_dir"):
+        return tiles
+
+    labels_dir = Path(cfg["labels_dir"])
+
+    # Group by image to build one Transformer and load annotations once per TIF.
+    by_image: Dict[str, List[dict]] = {}
+    for tile in tiles:
+        by_image.setdefault(tile["image_id"], []).append(tile)
+
+    pos, bg = [], []
+    for image_id, img_tiles in by_image.items():
+        annots = _load_annotations(labels_dir, Path(image_id).stem)
+        tf     = Transformer.from_crs("EPSG:4326", img_tiles[0]["native_crs"], always_xy=True)
+        for tile in img_tiles:
+            (pos if _tile_has_annotation(annots, tile, tf) else bg).append(tile)
+
+    if not pos:
+        logger.warning("No positive tiles found — skipping background reduction.")
+        return tiles
+
+    keep = _bg_keep(len(pos), cfg["target_bg_ratio"])
+    random.seed(cfg["random_seed"])
+    random.shuffle(bg)
+
+    logger.info(
+        "Background reduction: %d pos + %d/%d bg kept (target %.0f%%).",
+        len(pos), keep, len(bg), cfg["target_bg_ratio"] * 100,
+    )
+    return pos + bg[:keep]
+
+
+def assign_mixtures(tiles: List[dict], pool: List[dict], cfg: dict) -> List[dict]:
+    """Assign n_mixtures_per_tile randomly sampled mixtures to each tile."""
+    records = [
+        _build_record(tile, mix)
+        for tile in tiles
+        for mix in random.sample(pool, k=cfg["n_mixtures_per_tile"])
+    ]
+    logger.info("Assigned %d records (%d tiles x %d mixtures).",
+                len(records), len(tiles), cfg["n_mixtures_per_tile"])
+    return records
+
+
+def export_csv(records: List[dict], cfg: dict) -> pd.DataFrame:
+    """Write tile-mixture records to CSV and return the DataFrame."""
+    df = pd.DataFrame(records)
+    df.to_csv(cfg["output_csv"], index=False)
+    logger.info("Exported %d rows -> %s", len(df), cfg["output_csv"])
+    return df
+
+
+# ============================================================================
+# Orchestrator
+# ============================================================================
+
+def run(cfg: dict) -> List[dict]:
+    """Execute the full pipeline: pool -> tiles -> filter -> reduce -> assign -> export."""
+    pool    = generate_pool(cfg)
+    tiles   = collect_tiles(cfg)
+    tiles   = filter_nodata(tiles, cfg)
+    tiles   = reduce_background(tiles, cfg)
+    records = assign_mixtures(tiles, pool, cfg)
+    export_csv(records, cfg)
+    return records
+
+
+# ============================================================================
+# Entry point
+# ============================================================================
 
 if __name__ == "__main__":
-    # Example execution:
-    df_result = assign_mixtures_to_tiles(
-        psf_limits=[0.8, 2.5],
-        snr_limits=[15, 35],
-        n_mixtures=10,                  # Global pool of 50 unique mixtures
-        n_mixtures_per_tiles=3,         # Randomly pick 3 from the 50 for EVERY tile
-        input_directory="/home/thomas/Documents/code/pleiades-boat-detection/data/raw",
-        GSD_output=0.5,
-        tile_size=1024
-    )
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
+    cfg = {
+        "input_directory":     "/home/thomas/Documents/code/pleiades-boat-detection/data/raw",
+        "output_csv":          "tile_mixture_assignments.csv",
+        "GSD_output":          0.5,
+        "tile_size":           1024,
+        "psf_limits":          [0.60, 0.64],
+        "snr_limits":          [42, 44],
+        "n_mixtures":          50,
+        "n_mixtures_per_tile": 3,
+        "max_nodata_pct":      0.50,
+        # Set labels_dir to activate background reduction:
+        "labels_dir":          None,
+        "target_bg_ratio":     0.20,
+        "random_seed":         42,
+    }
 
+    run(cfg)
