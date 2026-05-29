@@ -247,7 +247,7 @@ if __name__ == "__main__":
         "output_csv":          "tile_mixture_assignments.csv",
         "GSD_output":          0.5,
         "tile_size":           1024,
-        "psf_limits":          [0.60, 0.64],
+        "psf_limits":          [0.48, 0.51],
         "snr_limits":          [42, 44],
         "n_mixtures":          50,
         "n_mixtures_per_tile": 3,
