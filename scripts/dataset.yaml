@@ -1,9 +1,0 @@
-path: /marbec-data/boat-detection/tom/detection_new/data/dataset/tiled
-train: images/train
-val: images/val
-test: images/test
-
-# Une seule classe maintenant
-nc: 1
-names:
-  0: Boat

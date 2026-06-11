@@ -37,20 +37,20 @@ Configuration path in the YAML (``cfg["background_reduction"]``)::
       labels_subdir:   labels         # subfolder name inside tiled_dir
       moved_subdir:    moved          # where excess tiles are relocated
 
-Input layout (Stage 5 output)::
+Input layout (Stage 6 / split output)::
 
     tiled_dir/
-      {images_subdir}/{split}/   *.tif   (or *.png / *.jpg)
-      {labels_subdir}/{split}/   *.txt
+      {images_subdir}/{fold_name}/   *.tif   (e.g. fold_00/, fold_01/, ...)
+      {labels_subdir}/{fold_name}/   *.txt
 
 Output layout (files physically moved, not copied)::
 
     tiled_dir/
-      {images_subdir}/{split}/   <retained tiles>
-      {labels_subdir}/{split}/   <retained labels>
+      {images_subdir}/{fold_name}/   <retained tiles>
+      {labels_subdir}/{fold_name}/   <retained labels>
       {moved_subdir}/
-        {images_subdir}/{split}/   <excess background tiles>
-        {labels_subdir}/{split}/   <excess background labels>
+        {images_subdir}/{fold_name}/   <excess background tiles>
+        {labels_subdir}/{fold_name}/   <excess background labels>
 
 Typical standalone usage::
 
@@ -100,7 +100,7 @@ class BackgroundReductionConfig:
             where excess background tiles are relocated.
     """
 
-    splits: List[str] = field(default_factory=lambda: ["train", "val"])
+    splits: List[str] = field(default_factory=lambda: ["fold_00"])
     target_bg_ratio: float = 0.15
     random_seed: int = 42
     images_subdir: str = "images"
@@ -126,7 +126,7 @@ class BackgroundReductionConfig:
             A fully populated :class:`BackgroundReductionConfig` instance.
         """
         return cls(
-            splits=list(cfg.get("splits", ["train", "val"])),
+            splits=list(cfg.get("splits", ["fold_00"])),
             target_bg_ratio=float(cfg.get("target_bg_ratio", 0.15)),
             random_seed=int(cfg.get("random_seed", 42)),
             images_subdir=str(cfg.get("images_subdir", "images")),
@@ -235,30 +235,112 @@ class BackgroundReductionStep(BaseStep):
     excess background (empty-label) tiles to a ``moved/`` subdirectory,
     capping the background fraction at ``target_bg_ratio``.
 
-    Only splits listed in ``cfg["background_reduction"]["splits"]`` are
-    touched.  The ``test`` split is deliberately excluded by default because
-    test-set statistics should reflect the true data distribution.
+    Only folds listed in ``cfg["background_reduction"]["splits"]`` are
+    touched.  Folds not listed are left intact, preserving their true class
+    distribution (useful for held-out evaluation folds).
 
     Files are *moved*, not deleted, so the operation is fully reversible:
     restore the originals by moving them back from the ``moved/`` tree.
 
-    Input layout (Stage 5 output)::
+    Input layout (Stage 6 / split output)::
 
         tiled_dir/
-          {images_subdir}/{split}/   *.tif
-          {labels_subdir}/{split}/   *.txt
+          {images_subdir}/{fold_name}/   *.tif   (e.g. fold_00/, fold_01/, ...)
+          {labels_subdir}/{fold_name}/   *.txt
 
     Output layout::
 
         tiled_dir/
-          {images_subdir}/{split}/   <retained tiles>
-          {labels_subdir}/{split}/   <retained labels>
+          {images_subdir}/{fold_name}/   <retained tiles>
+          {labels_subdir}/{fold_name}/   <retained labels>
           {moved_subdir}/
-            {images_subdir}/{split}/   <excess background tiles>
-            {labels_subdir}/{split}/   <excess background labels>
+            {images_subdir}/{fold_name}/   <excess background tiles>
+            {labels_subdir}/{fold_name}/   <excess background labels>
     """
 
     NAME = "background_reduction"
+
+    # ------------------------------------------------------------------
+    # Restore helpers (inverse of run — used by the CV experiment runner)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def restore_split(
+        split: str,
+        tiled_dir: Path,
+        step_cfg: "BackgroundReductionConfig",
+    ) -> int:
+        """Move all excess-background tiles back from ``moved/`` to their fold.
+
+        This is the exact inverse of :meth:`_process_split`.  Call it before
+        re-applying background reduction for a new CV iteration so that each
+        iteration starts from the full, unfiltered tile pool.
+
+        Args:
+            split:     Fold name (e.g. ``"fold_00"``).
+            tiled_dir: Root of the tiled dataset.
+            step_cfg:  Resolved step configuration.
+
+        Returns:
+            Number of tiles restored for this split (image files only).
+        """
+        src_img_dir = tiled_dir / step_cfg.moved_subdir / step_cfg.images_subdir / split
+        src_lbl_dir = tiled_dir / step_cfg.moved_subdir / step_cfg.labels_subdir / split
+        dst_img_dir = tiled_dir / step_cfg.images_subdir / split
+        dst_lbl_dir = tiled_dir / step_cfg.labels_subdir / split
+
+        if not src_img_dir.exists():
+            logger.debug("  No moved tiles for split %s — nothing to restore.", split)
+            return 0
+
+        dst_img_dir.mkdir(parents=True, exist_ok=True)
+        dst_lbl_dir.mkdir(parents=True, exist_ok=True)
+
+        count = 0
+        for img_path in src_img_dir.iterdir():
+            if img_path.is_file():
+                shutil.move(str(img_path), str(dst_img_dir / img_path.name))
+                count += 1
+
+        if src_lbl_dir.exists():
+            for lbl_path in src_lbl_dir.iterdir():
+                if lbl_path.is_file():
+                    shutil.move(str(lbl_path), str(dst_lbl_dir / lbl_path.name))
+
+        logger.info(
+            "  [%s] Restored %d tile(s) from moved/ → %s",
+            split, count, dst_img_dir,
+        )
+        return count
+
+    @classmethod
+    def restore(
+        cls,
+        splits: List[str],
+        tiled_dir: Path,
+        step_cfg: "BackgroundReductionConfig",
+    ) -> int:
+        """Restore all ``moved/`` backgrounds for every split in *splits*.
+
+        Intended to be called by the CV experiment runner at the start of each
+        new outer iteration, before re-applying background reduction with the
+        new val folds excluded.
+
+        Args:
+            splits:    Fold names to restore (typically all folds).
+            tiled_dir: Root of the tiled dataset.
+            step_cfg:  Resolved step configuration (needs ``moved_subdir``,
+                       ``images_subdir``, ``labels_subdir``).
+
+        Returns:
+            Total number of image tiles restored across all splits.
+        """
+        logger.info("Restoring moved backgrounds for splits: %s", splits)
+        total = 0
+        for split in splits:
+            total += cls.restore_split(split, tiled_dir, step_cfg)
+        logger.info("Restore complete. Total tiles restored: %d", total)
+        return total
 
     # ------------------------------------------------------------------
     # BaseStep interface
@@ -272,7 +354,7 @@ class BackgroundReductionStep(BaseStep):
                 :func:`~manager.load_config`.  Expected keys:
 
                 ``cfg["paths"]["tiled_dir"]``
-                    Root of the tiled dataset (output of Stage 5).
+                    Root of the tiled dataset (output of Stage 6 / split).
 
                 ``cfg["background_reduction"]``
                     Step-specific hyperparameters; see
@@ -322,7 +404,7 @@ class BackgroundReductionStep(BaseStep):
         """Process a single dataset split.
 
         Args:
-            split: Split name (e.g. ``"train"``).
+            split: Fold name (e.g. ``"fold_00"``).
             tiled_dir: Root of the tiled dataset.
             step_cfg: Resolved step configuration.
 
