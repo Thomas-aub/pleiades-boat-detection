@@ -18,13 +18,13 @@
 # I/O paths  (relative to project root, or absolute)
 # ---------------------------------------------------------------------------
 paths:
-  raw_dir:          "data/eval/raw"                   # source GeoTIFFs + GeoJSONs
-  processed_dir:    "data/eval/processed"             # root for all processed artefacts
-  radiometric_dir:  "data/eval/processed/radiometric" # stage 1 output
-  spatial_dir:      "data/eval/processed/spatial"     # stage 2 output
-  labels_dir:       "data/eval/processed/labels"      # stage 3 output (pre-split .txt)
-  dataset_dir:      "data/eval/dataset"               # stage 4 output  {train,val,test}/
-  tiled_dir:        "data/eval/dataset/tiled"         # stage 5 output  {train,val,test}/
+  raw_dir:          "data/raw"                   # source GeoTIFFs + GeoJSONs
+  processed_dir:    "data/processed"             # root for all processed artefacts
+  radiometric_dir:  "data/processed/radiometric" # stage 1 output
+  spatial_dir:      "data/processed/spatial"     # stage 2 output
+  labels_dir:       "data/processed/labels"      # stage 3 output (pre-split .txt)
+  dataset_dir:      "data/dataset"               # stage 4 output  {train,val,test}/
+  tiled_dir:        "data/dataset/tiled"         # stage 5 output  {train,val,test}/
 
 # ---------------------------------------------------------------------------
 # Stage registry - controls which stages are executed and in what order.
@@ -89,29 +89,25 @@ spatial:
   compress: "lzw"
 
 # ---------------------------------------------------------------------------
-# Stage 3 - Annotation conversion  (src/preprocessing/steps/annotations.py)
+# Stage 3 - Annotation conversion
 # ---------------------------------------------------------------------------
 annotations:
-  # Minimum fraction of an OBB's area that must be visible inside the
-  # image boundaries for the annotation to be included.
   min_visible: 0.10
-
-  # Minimum side length in pixels (in the output image space) for any OBB axis. 
   min_size_px: 2.0
 
-  # GeoJSON class_id → YOLO class_id remapping.
+  # On mappe TOUTES les classes vers 0 (Bateau global)
   class_map:
-    0: 0   # Pirogue
-    1: 0   # Double_hulled_Pirogue
-    2: 1   # Small_Motorboat 
-    3: 2   # Medium_Motorboat  # (merged into Large_Motorboat)
-    4: 2   # Large_Motorboat  # (merged into Large_Motorboat)
-    5: 2   # Sailing_Boat  # (merged into Large_Motorboat)
-    6: 2   # (merged into Large_Motorboat)
-    8: 0   # (merged into Pirogue)
-    10: 0  # (merged into Pirogue)
+    0: 0   # Pirogue -> Bateau
+    1: 0   # Double_hulled_Pirogue -> Bateau
+    2: 0   # Small_Motorboat -> Bateau
+    3: 0   # Medium_Motorboat -> Bateau
+    4: 0   # Large_Motorboat -> Bateau
+    5: 0   # Sailing_Boat -> Bateau
+    6: 0   # -> Bateau
+    8: 0   # -> Bateau
+    10: 0  # -> Bateau
 
-  # GeoJSON class IDs to discard entirely - no label line is written.
+  # Tu peux garder les skip_classes si ce ne sont vraiment pas des bateaux (ex: bouées)
   skip_classes: [9, 11]
 
 # ---------------------------------------------------------------------------
