@@ -12,12 +12,12 @@ Pipeline stages
 ~~~~~~~~~~~~~~~
 ::
 
-    1 radiometric - percentile stretch + gamma on the full GeoTIFF
-    2 spatial     - Upsampling via windowed rasterio I/O
-    3 annotations - GeoJSON OBB → YOLO OBB (global normalisation)
-    4 split       - image-level train / val / test (zero spatial leakage)
-    5 tiling      - raw GeoTIFF tiling + YOLO OBB label projection
-                    
+    1 radiometric           - percentile stretch + gamma on the full GeoTIFF
+    2 spatial               - Upsampling via windowed rasterio I/O
+    3 annotations           - GeoJSON OBB → YOLO OBB (global normalisation)
+    4 split                 - image-level train / val / test (zero spatial leakage)
+    5 tiling                - raw GeoTIFF tiling + YOLO OBB label projection
+    6 background_reduction  - move excess background tiles to keep ratio ≤ target
 
 Usage
 ~~~~~
@@ -33,7 +33,7 @@ Use a custom config::
 
     PYTHONPATH=. python scripts/preprocessing.py \\
         --config configs/my_experiment.yaml \\
-        --stages annotations split tiling
+        --stages annotations split tiling background_reduction
 
 Adjust log verbosity::
 
@@ -103,7 +103,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Stage names to execute, overriding the 'enabled' flags in the "
             "config.  Valid names: radiometric, spatial, annotations, split, "
-            "tiling.  Default: all enabled stages from the config."
+            "tiling, background_reduction.  "
+            "Default: all enabled stages from the config."
         ),
     )
     parser.add_argument(

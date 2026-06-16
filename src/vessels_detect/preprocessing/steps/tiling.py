@@ -375,9 +375,9 @@ def project_labels_to_tile(
 
     Annotations whose visible area inside the tile is smaller than
     ``min_visible_frac`` are discarded.  Surviving annotations are
-    re-expressed as normalised tile-relative coordinates (corners that
-    fall outside the tile may have values outside ``[0, 1]``, which is
-    valid for YOLO OBB - the model is trained on full-box coordinates).
+    re-expressed as normalised tile-relative coordinates. Coordinates 
+    are explicitly clipped to [0.0, 1.0] to prevent YOLO from dropping 
+    invalid out-of-bounds labels during training.
 
     Args:
         label_path: Path to the YOLO OBB label file, or ``None`` / missing
@@ -428,9 +428,13 @@ def project_labels_to_tile(
 
         # ── Re-normalise to tile space ───────────────────────────────────
         # Subtract the tile origin, then normalise by tile_size (the padded
-        # tile dimension). Coordinates outside [0, 1] are intentional and
-        # valid for partial boxes at tile edges.
+        # tile dimension). 
         corners_tile = (corners_px - np.array([[x_off, y_off]])) / tile_size  # (4, 2)
+
+        # ── Correct invalid labels ───────────────────────────────────────
+        # Clip coordinates strictly to [0.0, 1.0] to prevent YOLO from 
+        # dropping partial/edge boxes during the training phase.
+        corners_tile = np.clip(corners_tile, 0.0, 1.0)
 
         # Flatten to: class_id x1 y1 x2 y2 x3 y3 x4 y4
         flat = corners_tile.flatten()
@@ -438,8 +442,7 @@ def project_labels_to_tile(
         output_lines.append(" ".join(parts))
 
     return output_lines
-
-
+    
 # ---------------------------------------------------------------------------
 # Pipeline step
 # ---------------------------------------------------------------------------

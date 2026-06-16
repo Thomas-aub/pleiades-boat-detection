@@ -1,37 +1,30 @@
 # =============================================================================
 # configs/preprocessing.yaml
 # =============================================================================
-# Master configuration for the SAHI-optimised Global Preprocessing Pipeline.
+# Master configuration for the Global Preprocessing Pipeline.
 #
-# Strategy shift vs. the old tiling pipeline
-# -------------------------------------------
-# OLD: Tile raw GeoTIFFs → 320 px patches → annotate per-patch → split.
-#      YOLO trained on small crops; SAHI not used at training time.
-#
-# NEW: Process full GeoTIFF globally (radiometric + spatial) → annotate
-#      against the global image → split at image level.
-#      SAHI handles all slicing at inference time.
 #
 # Pipeline stages (set enabled: false to skip any stage)
 # -------------------------------------------------------
-#   1  radiometric   - percentile stretch + gamma on the full GeoTIFF
-#   2  spatial       - Upsampling via windowed rasterio I/O
-#   3  annotations   - GeoJSON OBB → YOLO OBB (global normalisation)
-#   4  split         - image-level train / val / test (zero spatial leakage)
-#   5  tiling        - raw GeoTIFF tiling + YOLO OBB label projection
+#   1  radiometric           - percentile stretch + gamma on the full GeoTIFF
+#   2  spatial               - Upsampling via windowed rasterio I/O
+#   3  annotations           - GeoJSON OBB → YOLO OBB (global normalisation)
+#   4  split                 - image-level train / val / test (zero spatial leakage)
+#   5  tiling                - raw GeoTIFF tiling + YOLO OBB label projection
+#   6  background_reduction  - move excess background tiles to keep ratio ≤ target
 # =============================================================================
 
 # ---------------------------------------------------------------------------
 # I/O paths  (relative to project root, or absolute)
 # ---------------------------------------------------------------------------
 paths:
-  raw_dir:          "data/eval/raw"                   # source GeoTIFFs + GeoJSONs
-  processed_dir:    "data/eval/processed"             # root for all processed artefacts
-  radiometric_dir:  "data/eval/processed/radiometric" # stage 1 output
-  spatial_dir:      "data/eval/processed/spatial"     # stage 2 output
-  labels_dir:       "data/eval/processed/labels"      # stage 3 output (pre-split .txt)
-  dataset_dir:      "data/eval/dataset"               # stage 4 output  {train,val,test}/
-  tiled_dir:        "data/eval/dataset/tiled"         # stage 5 output  {train,val,test}/
+  raw_dir:          "data/raw"                   # source GeoTIFFs + GeoJSONs
+  processed_dir:    "data/processed"             # root for all processed artefacts
+  radiometric_dir:  "data/processed/radiometric" # stage 1 output
+  spatial_dir:      "data/processed/spatial"     # stage 2 output
+  labels_dir:       "data/processed/labels"      # stage 3 output (pre-split .txt)
+  dataset_dir:      "data/dataset"               # stage 4 output  {train,val,test}/
+  tiled_dir:        "data/dataset/tiled"         # stage 5 output  {train,val,test}/
 
 # ---------------------------------------------------------------------------
 # Stage registry - controls which stages are executed and in what order.
@@ -40,19 +33,22 @@ paths:
 stages:
   - id: 1
     name: radiometric
-    enabled: false
+    enabled: true
   - id: 2
     name: spatial
-    enabled: false
+    enabled: true
   - id: 3
     name: annotations
-    enabled: false
+    enabled: true
   - id: 4
     name: split
-    enabled: false
+    enabled: true
   - id: 5
     name: tiling
-    enabled: false
+    enabled: true
+  - id: 6
+    name: background_reduction
+    enabled: true
 
 # ---------------------------------------------------------------------------
 # Stage 1 - Radiometric normalisation  (src/preprocessing/steps/radiometric.py)
@@ -68,7 +64,6 @@ radiometric:
 
   # 1-based band indices to export as (R, G, B).
   # null → auto-detect: ≥3 bands uses first three; 1-band (PAN) replicates to RGB.
-  # Example for a 4-band BGRN image with true-colour RGB: [3, 2, 1]
   bands: null
 
   # GeoTIFF compression applied to every processed image.
@@ -81,7 +76,6 @@ spatial:
   upscale_ratio: 2
 
   # Upsampling interpolation algorithm.
-  # Options (rasterio Resampling enum names):
   #   lanczos  - sharpest edges, best for downsampling, slight ringing risk
   #   cubic    - good quality, no ringing  (recommended for upsampling)
   #   bilinear - fast, noticeably softer
@@ -95,34 +89,25 @@ spatial:
   compress: "lzw"
 
 # ---------------------------------------------------------------------------
-# Stage 3 - Annotation conversion  (src/preprocessing/steps/annotations.py)
+# Stage 3 - Annotation conversion
 # ---------------------------------------------------------------------------
 annotations:
-  # Minimum fraction of an OBB's area that must be visible inside the
-  # image boundaries for the annotation to be included.
-  # For global images this is rarely triggered (only for objects right
-  # on the edge of the sensor swath).
   min_visible: 0.10
-
-  # Minimum side length in pixels (in the output image space) for any OBB
-  # axis.  Boxes smaller than this are symmetrically elongated from their
-  # centre to reach min_size_px.
   min_size_px: 2.0
 
-  # GeoJSON class_id → YOLO class_id remapping.
-  # Classes absent from this map AND not in skip_classes emit a warning.
+  # On mappe TOUTES les classes vers 0 (Bateau global)
   class_map:
-    0: 0   # Pirogue
-    1: 0   # Double_hulled_Pirogue
-    2: 1   # Small_Motorboat
-    3: 2   # Medium_Motorboat
-    4: 2   # Large_Motorboat
-    5: 2   # Sailing_Boat
-    6: 2   # (merged into Large_Motorboat)
-    8: 0
-    10: 0
+    0: 0   # Pirogue -> Bateau
+    1: 0   # Double_hulled_Pirogue -> Bateau
+    2: 0   # Small_Motorboat -> Bateau
+    3: 0   # Medium_Motorboat -> Bateau
+    4: 0   # Large_Motorboat -> Bateau
+    5: 0   # Sailing_Boat -> Bateau
+    6: 0   # -> Bateau
+    8: 0   # -> Bateau
+    10: 0  # -> Bateau
 
-  # GeoJSON class IDs to discard entirely - no label line is written.
+  # Tu peux garder les skip_classes si ce ne sont vraiment pas des bateaux (ex: bouées)
   skip_classes: [9, 11]
 
 # ---------------------------------------------------------------------------
@@ -143,52 +128,61 @@ split:
 
   # Copy mode: if true, files are copied to dataset_dir and originals kept.
   # If false, files are moved (saves disk space).
-  copy: false
+  copy: true
 
 # ---------------------------------------------------------------------------
 # Stage 5 - Raw GeoTIFF tiling  (src/preprocessing/steps/tiling.py)
 # ---------------------------------------------------------------------------
-# Reads the split dataset produced by Stage 4 and slices every selected
-# split into fixed-size GeoTIFF patches with matching YOLO OBB label files.
-#
-# No radiometric or spatial processing is applied - raw pixel values, source
-# dtype, band count, CRS, and Affine transform are all preserved verbatim.
-#
-# Input layout (Stage 4 output):
-#   dataset_dir/images/{split}/*.tif
-#   dataset_dir/labels/{split}/*.txt
-#
-# Output layout:
-#   tiled_dir/{images_subdir}/{split}/{stem}_{x_off}_{y_off}.tif
-#   tiled_dir/{labels_subdir}/{split}/{stem}_{x_off}_{y_off}.txt
+
 # ---------------------------------------------------------------------------
 tiling:
-  # Which dataset splits to tile.  Must be a subset of the directories
-  # created by Stage 4.  Remove any entry to skip that split entirely.
+
   splits:
-    - test
+    - train
+    - val
 
   # Output tile height and width in pixels.  Edge tiles are padded with the
   # source nodata value (or 0 when nodata is not defined) to this exact size.
   # No radiometric processing is applied - raw pixel values are preserved.
-  tile_size: 2048
+  tile_size: 1536
 
   # Pixel overlap between adjacent tiles in both axes.
   # Effective stride = tile_size - overlap.
   # Set to 0 for non-overlapping tiles.
-  overlap: 512
+  overlap: 0
 
   # GeoTIFF compression for the output tile files.
   compress: "lzw"
 
-  # Minimum fraction of an OBB's area that must fall inside a tile for the
-  # corresponding YOLO label line to be written to that tile's label file.
-  # 0.00 → keep every annotation that touches the tile.
-  # 0.10 → discard annotations that are less than 10 % visible in the tile.
+  # Minimum fraction of an OBB's area that must fall inside a tile.
   min_visible_frac: 0.10
 
-  # Subdirectory names inside tiled_dir for tile images and label files.
-  # Changing these lets you redirect outputs without touching the code.
-  # Default values match the standard Ultralytics YOLO dataset layout.
+  # Subdirectory names inside tiled_dir.
   images_subdir: "images"
   labels_subdir: "labels"
+
+# ---------------------------------------------------------------------------
+# Stage 6 - Background tile reduction  (src/preprocessing/steps/background_reduction.py)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+background_reduction:
+  # Which tiled splits to process.  
+  splits:
+    - train
+
+  # Maximum allowed fraction of background (empty-label) tiles in the final
+  # dataset.  Must be in the open interval (0.0, 1.0).
+  # 0.15 → at most 15 % of tiles may be background after reduction.
+  target_bg_ratio: 0.15
+
+  # Seed for the random shuffle applied before selecting tiles to move.
+  random_seed: 42
+
+  # Subdirectory names must match the values used in Stage 5 (tiling).
+  images_subdir: "images"
+  labels_subdir: "labels"
+
+  # Name of the top-level subdirectory inside tiled_dir where excess
+  # background tiles are relocated.
+  moved_subdir: "moved"

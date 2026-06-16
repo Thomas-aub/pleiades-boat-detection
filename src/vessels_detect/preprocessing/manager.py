@@ -46,11 +46,12 @@ from src.vessels_detect.preprocessing.steps.base import BaseStep
 # ---------------------------------------------------------------------------
 # Step imports - add new steps here and to STEP_REGISTRY below.
 # ---------------------------------------------------------------------------
-from src.vessels_detect.preprocessing.steps.radiometric import RadiometricStep
-from src.vessels_detect.preprocessing.steps.spatial     import SpatialStep
-from src.vessels_detect.preprocessing.steps.annotations import AnnotationStep
-from src.vessels_detect.preprocessing.steps.split       import SplitStep
-from src.vessels_detect.preprocessing.steps.tiling      import TilingStep
+from src.vessels_detect.preprocessing.steps.radiometric         import RadiometricStep
+from src.vessels_detect.preprocessing.steps.spatial             import SpatialStep
+from src.vessels_detect.preprocessing.steps.annotations         import AnnotationStep
+from src.vessels_detect.preprocessing.steps.split               import SplitStep
+from src.vessels_detect.preprocessing.steps.tiling              import TilingStep
+from src.vessels_detect.preprocessing.steps.background_reduction import BackgroundReductionStep
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,12 @@ logger = logging.getLogger(__name__)
 #: Maps step name (``BaseStep.NAME``) → step class.
 #: Add new steps here - no other file needs to change.
 STEP_REGISTRY: Dict[str, Type[BaseStep]] = {
-    RadiometricStep.NAME: RadiometricStep,
-    SpatialStep.NAME:     SpatialStep,
-    AnnotationStep.NAME:  AnnotationStep,
-    SplitStep.NAME:       SplitStep,
-    TilingStep.NAME:      TilingStep,
+    RadiometricStep.NAME:          RadiometricStep,
+    SpatialStep.NAME:              SpatialStep,
+    AnnotationStep.NAME:           AnnotationStep,
+    SplitStep.NAME:                SplitStep,
+    TilingStep.NAME:               TilingStep,
+    BackgroundReductionStep.NAME:  BackgroundReductionStep,
 }
 
 
