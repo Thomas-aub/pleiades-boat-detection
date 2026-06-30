@@ -5,14 +5,16 @@ Orchestrates the vessel-detection preprocessing pipeline.
 
 Reads configs/preprocessing.yaml and runs every stage in order:
 
-    1. image_enhancement   - radiometric stretch + gamma, then upsampling
-    2. label_conversion    - GeoJSON OBB -> YOLO OBB
-    3. dataset_split       - image-level train / val / test split
-    4. slicing             - tiling + label projection
-    5. background_filtering- cap background-tile ratio per split
+    0. degradation          - blur + GSD downsampling (sensor-domain match)
+    1. image_enhancement    - radiometric stretch + gamma, then upsampling
+    2. label_conversion     - GeoJSON OBB -> YOLO OBB
+    3. dataset_split        - image-level train / val / test split
+    4. slicing              - tiling + label projection
+    5. background_filtering - cap background-tile ratio per split
+    6. data_augmentation    - synthesize extra augmented tiles (train only)
 
-This version has been optimized to use ProcessPoolExecutor for concurrent 
-processing of heavy I/O and CPU tasks.
+This version uses ProcessPoolExecutor for concurrent processing of heavy
+I/O and CPU tasks.
 
 No CLI: edit configs/preprocessing.yaml and run this file directly.
 
@@ -28,14 +30,25 @@ from typing import Dict, List, Tuple
 
 import yaml
 
+from src.vessels_detect.preprocessing.degradation import degrade_image
 from src.vessels_detect.preprocessing.image_enhancement import enhance_image
 from src.vessels_detect.preprocessing.label_conversion import convert_labels
 from src.vessels_detect.preprocessing.dataset_split import split_dataset
 from src.vessels_detect.preprocessing.slicing import slice_image
 from src.vessels_detect.preprocessing.background_filtering import filter_background
+from src.vessels_detect.preprocessing.data_augmentation import augment_split
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)-8s] %(message)s")
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Step 0 - GSD degradation (blur + downsample)
+# ---------------------------------------------------------------------------
+
+def degradation(image_path: Path, out_dir: Path, cfg: Dict) -> Path:
+    """Anti-alias blur, then downsample to the target GSD."""
+    return degrade_image(image_path, out_dir, cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -51,9 +64,11 @@ def label_conversion(enhanced_image_path: Path, raw_dir: Path, out_dir: Path, cf
     """GeoJSON OBB -> YOLO OBB, normalised to the enhanced image's dimensions."""
     return convert_labels(enhanced_image_path, raw_dir, out_dir, cfg)
 
-def process_single_image(image_path: Path, raw_dir: Path, enhanced_dir: Path, labels_dir: Path, cfg: Dict) -> Tuple[Path, Path]:
-    """Helper function to run steps 1 and 2 sequentially for a single image, enabling parallelization."""
-    enhanced_path = image_enhancement(image_path, enhanced_dir, cfg)
+
+def process_single_image(image_path: Path, raw_dir: Path, degraded_dir: Path, enhanced_dir: Path, labels_dir: Path, cfg: Dict) -> Tuple[Path, Path]:
+    """Helper function to run steps 0, 1 and 2 sequentially for a single image, enabling parallelization."""
+    degraded_path = degradation(image_path, degraded_dir, cfg)
+    enhanced_path = image_enhancement(degraded_path, enhanced_dir, cfg)
     label_path = label_conversion(enhanced_path, raw_dir, labels_dir, cfg)
     return enhanced_path, label_path
 
@@ -86,6 +101,15 @@ def background_filtering(tiled_dir: Path, cfg: Dict) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Step 6 - Data augmentation
+# ---------------------------------------------------------------------------
+
+def data_augmentation(tiled_dir: Path, cfg: Dict) -> int:
+    """Synthesize N augmented copies of every tile in the configured split(s)."""
+    return augment_split(tiled_dir, cfg)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -97,6 +121,7 @@ def main() -> None:
 
     paths = {k: Path(v) for k, v in cfg["paths"].items()}
     raw_dir = paths["raw_dir"]
+    degraded_dir = paths["degraded_dir"]
     enhanced_dir = paths["enhanced_dir"]
     labels_dir = paths["labels_dir"]
     dataset_dir = paths["dataset_dir"]
@@ -108,15 +133,15 @@ def main() -> None:
 
     image_label_pairs: List[Tuple[Path, Path]] = []
 
-    # ── Step 1 & 2 - Image enhancement & label conversion (PARALLELIZED) ────
-    logger.info("Starting Image Enhancement & Label Conversion in parallel...")
+    # ── Step 0, 1 & 2 - Degradation, enhancement & label conversion (PARALLELIZED) ──
+    logger.info("Starting Degradation, Image Enhancement & Label Conversion in parallel...")
     with concurrent.futures.ProcessPoolExecutor() as executor:
         # Submit all image processing tasks to the process pool
         futures = {
-            executor.submit(process_single_image, image_path, raw_dir, enhanced_dir, labels_dir, cfg): image_path
+            executor.submit(process_single_image, image_path, raw_dir, degraded_dir, enhanced_dir, labels_dir, cfg): image_path
             for image_path in raw_images
         }
-        
+
         # Gather results as they complete
         for future in concurrent.futures.as_completed(futures):
             image_path = futures[future]
@@ -124,7 +149,7 @@ def main() -> None:
                 result = future.result()
                 image_label_pairs.append(result)
             except Exception as exc:
-                logger.error(f"Image {image_path.name} generated an exception during enhancement/conversion: {exc}")
+                logger.error(f"Image {image_path.name} generated an exception during degradation/enhancement/conversion: {exc}")
 
     # Sort the pairs to maintain deterministic ordering for the dataset split
     image_label_pairs.sort(key=lambda x: x[0].name)
@@ -136,7 +161,7 @@ def main() -> None:
     # ── Step 4 - Slicing (PARALLELIZED) ─────────────────────────────────────
     logger.info("Starting Slicing in parallel...")
     tiling_splits = set(cfg["tiling"].get("splits", ["train", "val"]))
-    
+
     with concurrent.futures.ProcessPoolExecutor() as executor:
         slicing_futures = []
         for image_path, _ in image_label_pairs:
@@ -150,7 +175,7 @@ def main() -> None:
             slicing_futures.append(
                 executor.submit(slicing, split_image_path, split_label_path, tiled_dir, split, cfg)
             )
-        
+
         # Ensure all slicing tasks finish and catch any errors
         for future in concurrent.futures.as_completed(slicing_futures):
             try:
@@ -164,7 +189,16 @@ def main() -> None:
     # computed across all tiles of a split, not per image.
     total_moved = background_filtering(tiled_dir, cfg)
 
-    logger.info("Pipeline complete. %d background tile(s) relocated.", total_moved)
+    # ── Step 6 - Data augmentation (SEQUENTIAL) ──────────────────────────────
+    logger.info("Starting Data Augmentation...")
+    # Must run after background filtering so augmented copies are only
+    # generated from the final, ratio-balanced tile set.
+    total_augmented = data_augmentation(tiled_dir, cfg)
+
+    logger.info(
+        "Pipeline complete. %d background tile(s) relocated, %d augmented tile(s) created.",
+        total_moved, total_augmented,
+    )
 
 
 if __name__ == "__main__":

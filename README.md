@@ -94,37 +94,20 @@ To maximize CPU utilization, image enhancement and label conversion are bundled 
 | Key | Default | Description / Impact |
 | --- | --- | --- |
 | `lo_percentile` | `1.0` | Lower clipping percentile. Drops extreme dark anomalies.
-
- |
 | `hi_percentile` | `99.9` | Upper clipping percentile. Drops bright anomalies.
-
- |
 | `gamma` | `0.8` | Gamma exponent. Values < 1.0 brighten shadows.
-
- |
 | `upscale_ratio` | `2` | Scale factor (e.g. `2` = 2× upsampling).
-
- |
 | `interpolation` | `cubic` | Resampling algorithm (`lanczos`, `cubic`, `bilinear`, `nearest`).
 
- |
 
 **Annotation Parameters**
 
 | Key | Default | Description / Impact |
 | --- | --- | --- |
 | `min_visible` | `0.10` | Min fraction of OBB area inside the image boundary.
-
- |
 | `min_size_px` | `2.0` | Min OBB side length in pixels; smaller boxes are symmetrically elongated.
-
- |
 | `class_map` | `{0:0, 1:0...}` | GeoJSON `class_id` → YOLO class index remapping.
-
- |
 | `skip_classes` | `[9, 11]` | GeoJSON class IDs to discard entirely (e.g., buoys).
-
- |
 
 * **Input:** `paths.raw_dir/*.tif` + `paths.raw_dir/*.geojson` → **Output:** `paths.enhanced_dir/*.tif` + `paths.labels_dir/*.txt`
 
@@ -136,23 +119,12 @@ This step runs sequentially on the main thread to ensure deterministic sorting a
 | Key | Default | Description / Impact |
 | --- | --- | --- |
 | `train_ratio` | `0.70` | Target fraction for training data.
-
- |
 | `val_ratio` | `0.15` | Target fraction for validation data.
-
- |
 | `test_ratio` | `0.15` | Target fraction for testing data.
-
- |
 | `priority_class_ids` | `[0]` | Class IDs weighted more heavily in deficit scoring to balance rare classes.
-
- |
 | `priority_weight` | `5.0` | Multiplier for priority classes (≥ 1.0).
-
- |
 | `copy` | `true` | `true` = copy files; `false` = move to save disk space.
 
- |
 
 * **Input:** `paths.enhanced_dir/*.tif` + `paths.labels_dir/*.txt` → **Output:** `paths.dataset_dir/{images,labels}/{train,val,test}/`
 
@@ -164,17 +136,10 @@ Slicing is heavily parallelized across the CPU pool to speed up disk writes. Thi
 | Key | Default | Description / Impact |
 | --- | --- | --- |
 | `splits` | `[train, val]` | Which dataset partitions to process.
-
- |
 | `tile_size` | `1536` | Output tile height and width in pixels.
-
- |
 | `overlap` | `0` | Pixel overlap between adjacent tiles.
-
- |
 | `min_visible_frac` | `0.10` | Min OBB visible fraction to keep a label line inside the tile.
 
- |
 
 * **Input:** `paths.dataset_dir/{images,labels}/{split}/*.{tif,txt}` → **Output:** `paths.tiled_dir/{images,labels}/{split}/{stem}_{x_off}_{y_off}.{tif,txt}`
 
@@ -186,14 +151,9 @@ This step runs sequentially because it must compute the background-to-tile ratio
 | Key | Default | Description / Impact |
 | --- | --- | --- |
 | `splits` | `[train]` | Which partitions to reduce.
-
- |
 | `target_bg_ratio` | `0.15` | Maximum allowed fraction of empty-label tiles in the dataset (e.g., 15%).
-
- |
 | `moved_subdir` | `moved` | Subdirectory where excess background tiles are relocated.
 
- |
 
 * **Input:** `paths.tiled_dir/{images,labels}/{split}/*.{tif,txt}` → **Output:** Moves excess to `paths.tiled_dir/moved/{images,labels}/`
 
@@ -273,6 +233,25 @@ python scripts/predict.py --config configs/predict.yaml --mode inference
 
 # 4. Run prediction in Evaluation mode (Matches GT, outputs mAP50 metrics & TP/FP/FN labeled GeoJSONs)
 python scripts/predict.py --config configs/predict.yaml --mode evaluation
+
+```
+
+
+### Installation
+
+This project relies on specifically pinned geospatial and data science libraries that require **Python 3.12**. The recommended installation method is to create a dedicated Conda environment and install the dependencies via `pip`.
+
+Run the following commands in your terminal:
+
+```bash
+# 1. Create a Conda environment with Python 3.12
+conda create -n canoe-yolo python=3.12 -y
+
+# 2. Activate the environment
+conda activate canoe-yolo
+
+# 3. Install the dependencies
+pip install -r requirements.txt
 
 ```
 

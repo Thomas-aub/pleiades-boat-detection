@@ -9,3 +9,5 @@ rasterio==1.5.0
 Shapely==2.1.2
 tqdm==4.67.3
 ultralytics==8.4.1
+albumentations
+scipy
