@@ -1,31 +1,20 @@
 # 🚤 Pleiades Boat Detection (YOLO-OBB)
 
-This project provides a complete pipeline for detecting boats in high-resolution GeoTIFF satellite imagery using **YOLO Oriented Bounding Boxes (OBB)**. It covers everything from raw GeoTIFF preprocessing to stratified dataset splitting, tiling, training, and evaluation.
+## Short Presentation
+
+This project provides an automated, end-to-end deep learning pipeline designed to detect and quantify small-scale artisanal fishing fleets (traditional non-motorized pirogues) along the coasts of Madagascar. Utilizing Very High-Resolution (VHR) satellite imagery (Pléiades Neo at $0.30~m/px$ and Pléiades at $0.50~m/px$), this tool addresses the "statistical invisibility" of artisanal fishing. Built around the Ultralytics YOLO26-OBB (Oriented Bounding Boxes) architecture, the project encompasses everything from raw GeoTIFF radiometric preprocessing and spatial upscaling, to leakage-free dataset stratification, model training, and geospatial post-processing for operational deployment.
+
+## Features
+
+* **Deep Learning for Tiny Objects:** Employs YOLO26 with Oriented Bounding Boxes (OBB) to accurately isolate highly elongated, few-pixel pirogues.
+* **Geospatial & Radiometric Precision:** Handles massive raw GeoTIFFs using `rasterio` and `pyproj`. Preserves vital spatial metadata (CRS, Affine transforms) while enabling robust spatial upscaling and radiometric normalization.
+* **Global-to-Tile Annotation Engine:** Converts WGS84 GeoJSONs into globally-normalized YOLO labels via `Shapely` minimum rotated rectangles, seamlessly translating them into tile-specific coordinates.
+* **Leakage-Free Stratification:** Implements class-aware greedy assignment at the *image* level, strictly separating geographical zones across train/val/test splits to guarantee zero spatial leakage.
+* **Automated Spatial Filtering:** Integrates modular geospatial post-processing to automatically suppress false-positive detections by enforcing inclusion within coastline masks and exclusion from building footprints using `geopandas`.
 
 ---
 
-## 🚀 Features
-
-### Preprocessing
-- **Radiometric Normalisation**: Global percentile stretching with gamma correction, computed from a thumbnail for consistent colour rendering across the full image. Output: uint8 RGB GeoTIFF.
-- **Spatial Resampling**: Configurable upsampling via rasterio `WarpedVRT` (Lanczos, Cubic, Bilinear, Nearest). Block-wise streaming preserves geospatial metadata (CRS, Affine transform).
-- **Annotation Conversion**: GeoJSON OBB → YOLO OBB label files normalised to the **global** processed image dimensions. Includes visibility filtering, minimum-side enforcement for degenerate boxes, and class remapping.
-- **Stratified Splitting**: Image-level train/val/test partitioning with class-aware greedy assignment to balance rare-class representation and prevent spatial leakage.
-- **Raw GeoTIFF Tiling**: Overlap-aware tiling of the split dataset with YOLO OBB label projection into tile space. Source dtype, band count, CRS, and raw pixel values are preserved verbatim. Uniform tiles (all pixels identical) are discarded.
-
-### Training
-- **Ultralytics YOLO-OBB**: Oriented Bounding Box detection for precise localisation of non-axis-aligned vessels.
-- **Model Initialisation**: Weight transfer from pretrained checkpoints or training from custom architecture YAMLs.
-- **OBB Augmentation**: Geometric transforms including mosaic, rotation, and scale jitter.
-
-### Inference & Post-processing
-- **Geospatial Output**: Pixel-to-world coordinate transformation with standardised GeoJSON export.
-- **Spatial Filtering**: Modular false-positive suppression via coastline and building mask intersections.
-- **Performance Metrics**: OBB-specific mAP, Precision, and Recall with confidence-sorted greedy IoU matching (PASCAL VOC protocol).
-
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```text
 pleiades-boat-detection/
@@ -37,236 +26,274 @@ pleiades-boat-detection/
 │   └── yolo26m-obb-p2.yaml     # Model architecture definition
 ├── data/                       # Dataset storage (ignored by git)
 │   ├── raw/                    # Original GeoTIFFs and GeoJSON annotations
-│   └── processed/              # Radiometric, spatial, labels, dataset, tiled outputs
+│   ├── processed/              # Radiometric, spatial, labels outputs
+│   ├── dataset/                # Stratified and tiled dataset ready for training
+│   └── eval/                   # Inference inputs, masks, and ground-truth
 ├── notebooks/                  # Visualisation and analysis
-│   ├── 01_data_exploration.ipynb
-│   └── 02_model_evaluation_m_320_640.ipynb
+│   ├── data_exploration.ipynb
+│   └── model_evaluation.ipynb
 ├── scripts/                    # CLI entry points
 │   ├── preprocessing.py        # Runs the full preprocessing pipeline
 │   ├── train.py                # Starts YOLO training
 │   ├── predict.py              # Runs inference and calculates metrics
-│   ├── grid_search.py          # Hyperparameter optimisation
-│   └── submit_grid_sequential.py
+│   └── grid_search/            # Hyperparameter optimisation scripts
 ├── src/                        # Core library
 │   └── vessels_detect/
 │       ├── manager.py          # Pipeline orchestration
-│       ├── preprocessing/
-│       │   ├── manager.py      # Registry + PreprocessingManager
-│       │   └── steps/
-│       │       ├── base.py         # Abstract BaseStep
-│       │       ├── radiometric.py  # Stage 1 — percentile stretch + gamma
-│       │       ├── spatial.py      # Stage 2 — WarpedVRT resampling
-│       │       ├── annotations.py  # Stage 3 — GeoJSON OBB → YOLO OBB
-│       │       ├── split.py        # Stage 4 — image-level stratified split
-│       │       └── tiling.py       # Stage 5 — raw GeoTIFF tiling
-│       ├── models/
-│       │   └── yolo_trainer.py
-│       ├── predict/
-│       │   ├── predictor.py
-│       │   ├── evaluation.py
-│       │   └── metrics.py
-│       ├── postprocessing/
-│       │   ├── spatial_filter.py
-│       │   ├── geojson_writer.py
-│       │   └── steps/
-│       │       ├── buildings.py
-│       │       └── coastline.py
-│       └── utils/
-├── weights/                    # Model weights and architecture YAMLs
-├── .gitignore
+│       ├── preprocessing/      # Stage 1-6 preprocessing steps
+│       ├── degradation/        # Physics-based & stochastic degradation
+│       ├── models/             # YOLO_trainer
+│       ├── predict/            # Predictor, evaluation, and metrics
+│       ├── postprocessing/     # Coastline and building spatial filters
+│       └── utils/              
+├── weights/                    # Pre-trained checkpoints and custom architectures
+├── requirements.txt            # Python dependencies
 └── README.md
+
 ```
 
----
-
-## 🛠 Installation
-[TODO]
 ---
 
 ## 🔄 Workflow Pipeline
 
-The system follows a modular, configuration-driven registry architecture. Each stage is a `BaseStep` subclass registered in `STEP_REGISTRY`; adding a new stage requires no changes outside its own module and the registry entry.
 
-### 1. Data Preprocessing
+### 1. Data Preprocessing (`configs/preprocessing.yaml`)
 
-The preprocessing pipeline transforms raw GeoTIFF imagery and GeoJSON annotations into tiled YOLO-OBB training data in five sequential stages.
+The preprocessing pipeline transforms raw GeoTIFF imagery and GeoJSON annotations into tiled YOLO-OBB training data in five sequential steps[cite: 9]. This version is highly optimized, utilizing Python's `ProcessPoolExecutor` to run heavy I/O and CPU tasks concurrently across multiple cores[cite: 9].
 
-```
+```text
 raw GeoTIFF + GeoJSON
       │
-      ▼ Stage 1 — radiometric
-  uint8 RGB GeoTIFF  (global percentile stretch + gamma)
+      ▼ Step 1 & 2 — Image Enhancement & Label Conversion (Parallelized)
+  uint8 RGB resampled GeoTIFF + YOLO OBB .txt
       │
-      ▼ Stage 2 — spatial
-  resampled GeoTIFF  (WarpedVRT, configurable scale + interpolation)
-      │
-      ▼ Stage 3 — annotations
-  YOLO OBB .txt  (one file per image, coords normalised to full image)
-      │
-      ▼ Stage 4 — split
+      ▼ Step 3 — Dataset Split (Sequential)
   dataset/{images,labels}/{train,val,test}/
       │
-      ▼ Stage 5 — tiling
+      ▼ Step 4 — Slicing (Parallelized)
   tiled/{images,labels}/{train,val,test}/{stem}_{x_off}_{y_off}.{tif,txt}
+      │
+      ▼ Step 5 — Background Filtering (Sequential)
+  relocates excess empty-label tiles to meet target_bg_ratio
+
 ```
 
-#### Stage 1 — Radiometric Normalisation (`radiometric.py`)
+#### Step 1 & 2 — Image Enhancement & Label Conversion (Parallelized)
 
-Applies a **global** percentile stretch followed by gamma correction to each raw GeoTIFF. Statistics are computed from a fast bilinear thumbnail (longest edge: 1024 px) so that all windows share a consistent colour rendering — eliminating per-tile contrast drift that confuses feature extractors. The full-resolution image is written band-by-band via windowed I/O.
+To maximize CPU utilization, image enhancement and label conversion are bundled together and executed in parallel for each image.
 
-
-Key config (`configs/preprocessing.yaml → radiometric`):
-
-| Key | Default | Description |
-|---|---|---|
-| `lo_percentile` | `1.0` | Lower clipping percentile |
-| `hi_percentile` | `99.9` | Upper clipping percentile |
-| `gamma` | `0.8` | Gamma exponent (< 1.0 brightens shadows) |
-| `bands` | `null` | 1-based source band indices for (R,G,B); `null` = auto |
-| `compress` | `lzw` | GeoTIFF compression codec |
-
-Input: `paths.raw_dir/*.tif` → Output: `paths.radiometric_dir/*.tif`
-
-#### Stage 2 — Spatial Resampling (`spatial.py`)
-
-Rescales each GeoTIFF using rasterio's `WarpedVRT` API, which correctly handles global resampling while preserving the CRS and updating the Affine transform so that geographic extent is identical to the input.
-
-Key config (`configs/preprocessing.yaml → spatial`):
-
-| Key | Default | Description |
-|---|---|---|
-| `upscale_ratio` | `1.0` | Scale factor (e.g. `2` = 2× upsampling) |
-| `interpolation` | `lanczos` | Resampling algorithm: `lanczos`, `cubic`, `bilinear`, `nearest` |
-| `window_size` | `512` | Block size for streaming I/O |
-| `compress` | `lzw` | GeoTIFF compression codec |
-
-Input: `paths.radiometric_dir/*.tif` → Output: `paths.spatial_dir/*.tif`
-
-#### Stage 3 — Annotation Conversion (`annotations.py`)
-
-Converts GeoJSON OBB annotations to YOLO OBB `.txt` label files. Coordinates are normalised to the **full processed image dimensions** — not a tile — so that label files are valid for both direct YOLO training and SAHI-based inference.
-
-Coordinate flow per annotation:
-```
-GeoJSON exterior ring  (WGS 84 / EPSG:4326)
-    ↓  minimum_rotated_rectangle  (Shapely)
-    ↓  reproject to image CRS  (pyproj Transformer)
-    ↓  apply inverse image Affine  →  pixel (col, row)
-    ↓  enforce minimum side length  (symmetric elongation from centroid)
-    ↓  normalise by (image_width, image_height)  →  [0, 1]
-    ↓  write YOLO OBB line:  class_id x1 y1 x2 y2 x3 y3 x4 y4
-```
-
-Key config (`configs/preprocessing.yaml → annotations`):
-
-| Key | Default | Description |
-|---|---|---|
-| `min_visible` | `0.10` | Min fraction of OBB area inside the image boundary |
-| `min_size_px` | `2.0` | Min OBB side length in pixels; smaller boxes are elongated |
-| `class_map` | `{0:0, …}` | GeoJSON `class_id` → YOLO class index remapping |
-| `skip_classes` | `[9, 11]` | GeoJSON class IDs to discard entirely |
-
-Input: `paths.spatial_dir/*.tif` + `paths.raw_dir/*.geojson` → Output: `paths.labels_dir/*.txt`
-
-#### Stage 4 — Dataset Split (`split.py`)
-
-Distributes processed images and labels into `train`, `val`, and `test` sub-directories using **class-aware greedy assignment**. Images are assigned at the image level (never split across partitions) to prevent spatial leakage. Images with the most priority-class annotations are assigned first.
-
-Scoring: each candidate split is scored by how much adding the image reduces its per-class deficit (weighted by `priority_weight` for priority classes). Ties are broken randomly with a fixed seed.
-
-Key config (`configs/preprocessing.yaml → split`):
-
-| Key | Default | Description |
-|---|---|---|
-| `train_ratio` | `0.70` | Target fraction for training |
-| `val_ratio` | `0.15` | Target fraction for validation |
-| `test_ratio` | `0.15` | Target fraction for testing |
-| `priority_class_ids` | `[0]` | Class IDs weighted more heavily in deficit scoring |
-| `priority_weight` | `5.0` | Multiplier for priority classes (≥ 1.0) |
-| `random_seed` | `42` | Seed for reproducible tie-breaking |
-| `copy` | `false` | `true` = copy files (keep originals); `false` = move |
-
-Input: `paths.spatial_dir/*.tif` + `paths.labels_dir/*.txt` → Output: `paths.dataset_dir/{images,labels}/{train,val,test}/`
-
-#### Stage 5 — Tiling (`tiling.py`)
-
-Tiles the split dataset into fixed-size GeoTIFF patches and projects YOLO OBB labels from image space into tile space. This stage is **radiometric-free**: source dtype, band count, CRS, and raw pixel values are preserved verbatim. Each tile embeds its own CRS and Affine transform (anchored at its top-left corner) plus provenance TIFF tags.
-
-Uniform tiles (global `min == max` across all bands) are discarded — these are nodata slabs, pure-water expanses, or padding-only edge tiles with no information content.
-
-Label projection: for each tile, all source annotations are evaluated against the tile polygon in pixel space. Annotations whose visible area (`intersection / OBB area`) is below `min_visible_frac` are discarded. Surviving annotations are re-expressed in tile-relative normalised coordinates; corners outside `[0, 1]` are intentional and valid for partial boxes at tile edges.
-
-Key config (`configs/preprocessing.yaml → tiling`):
-
-| Key | Default | Description |
-|---|---|---|
-| `splits` | `[train, val, test]` | Which splits to tile |
-| `tile_size` | `640` | Output tile height and width in pixels |
-| `overlap` | `64` | Pixel overlap between adjacent tiles; stride = `tile_size - overlap` |
-| `compress` | `lzw` | GeoTIFF compression codec |
-| `min_visible_frac` | `0.10` | Min OBB visible fraction to keep a label line |
-| `images_subdir` | `images` | Subdirectory name for tile GeoTIFFs inside `tiled_dir` |
-| `labels_subdir` | `labels` | Subdirectory name for tile label files inside `tiled_dir` |
-
-Input: `paths.dataset_dir/{images,labels}/{split}/*.{tif,txt}` → Output: `paths.tiled_dir/{images_subdir,labels_subdir}/{split}/{stem}_{x_off}_{y_off}.{tif,txt}`
-
-### 2. Training
-[TODO] 
-
-### 3. Inference & Post-processing
-[TODO] 
+* **Image Enhancement (`image_enhancement.py`):** Applies a global percentile stretch and gamma correction to the raw GeoTIFF, computing statistics from a fast thumbnail so all windows share consistent color rendering. It then rescales the image to a higher resolution using `rasterio`'s `WarpedVRT` while keeping the geospatial transform correct. Both operations stream the image block-by-block to keep RAM use flat.
 
 
-#### Running the pipeline
+* **Label Conversion (`label_conversion.py`):** Converts GeoJSON OBB annotations to YOLO OBB `.txt` label files. Coordinates are normalized to the **full enhanced image dimensions** (not a tile) to ensure compatibility with direct YOLO training and SAHI-based inference. This conversion uses `Shapely` to enforce minimum rotated rectangles and `pyproj` for CRS reprojection.
+
+
+
+**Radiometric & Spatial Parameters**
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `lo_percentile` | `1.0` | Lower clipping percentile. Drops extreme dark anomalies.
+
+ |
+| `hi_percentile` | `99.9` | Upper clipping percentile. Drops bright anomalies.
+
+ |
+| `gamma` | `0.8` | Gamma exponent. Values < 1.0 brighten shadows.
+
+ |
+| `upscale_ratio` | `2` | Scale factor (e.g. `2` = 2× upsampling).
+
+ |
+| `interpolation` | `cubic` | Resampling algorithm (`lanczos`, `cubic`, `bilinear`, `nearest`).
+
+ |
+
+**Annotation Parameters**
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `min_visible` | `0.10` | Min fraction of OBB area inside the image boundary.
+
+ |
+| `min_size_px` | `2.0` | Min OBB side length in pixels; smaller boxes are symmetrically elongated.
+
+ |
+| `class_map` | `{0:0, 1:0...}` | GeoJSON `class_id` → YOLO class index remapping.
+
+ |
+| `skip_classes` | `[9, 11]` | GeoJSON class IDs to discard entirely (e.g., buoys).
+
+ |
+
+* **Input:** `paths.raw_dir/*.tif` + `paths.raw_dir/*.geojson` → **Output:** `paths.enhanced_dir/*.tif` + `paths.labels_dir/*.txt`
+
+
+#### Step 3 — Dataset Split (`dataset_split.py`) (Sequential)
+
+This step runs sequentially on the main thread to ensure deterministic sorting and repeatable dataset splits. It distributes processed images and labels into `train`, `val`, and `test` sub-directories using **class-aware greedy assignment**. Images are assigned at the image level (never split across partitions) to prevent spatial leakage.
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `train_ratio` | `0.70` | Target fraction for training data.
+
+ |
+| `val_ratio` | `0.15` | Target fraction for validation data.
+
+ |
+| `test_ratio` | `0.15` | Target fraction for testing data.
+
+ |
+| `priority_class_ids` | `[0]` | Class IDs weighted more heavily in deficit scoring to balance rare classes.
+
+ |
+| `priority_weight` | `5.0` | Multiplier for priority classes (≥ 1.0).
+
+ |
+| `copy` | `true` | `true` = copy files; `false` = move to save disk space.
+
+ |
+
+* **Input:** `paths.enhanced_dir/*.tif` + `paths.labels_dir/*.txt` → **Output:** `paths.dataset_dir/{images,labels}/{train,val,test}/`
+
+
+#### Step 4 — Slicing (`slicing.py`) (Parallelized)
+
+Slicing is heavily parallelized across the CPU pool to speed up disk writes. This step cuts the split dataset into fixed-size GeoTIFF patches and projects the image-level YOLO OBB labels into tile-relative normalized coordinates. This stage is **radiometric-free**: source dtype, band count, and raw pixel values are carried through verbatim from the enhanced input.
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `splits` | `[train, val]` | Which dataset partitions to process.
+
+ |
+| `tile_size` | `1536` | Output tile height and width in pixels.
+
+ |
+| `overlap` | `0` | Pixel overlap between adjacent tiles.
+
+ |
+| `min_visible_frac` | `0.10` | Min OBB visible fraction to keep a label line inside the tile.
+
+ |
+
+* **Input:** `paths.dataset_dir/{images,labels}/{split}/*.{tif,txt}` → **Output:** `paths.tiled_dir/{images,labels}/{split}/{stem}_{x_off}_{y_off}.{tif,txt}`
+
+
+#### Step 5 — Background Filtering (`background_filtering.py`) (Sequential)
+
+This step runs sequentially because it must compute the background-to-tile ratio across the entire tiled directory for a given split. It caps the fraction of background (empty-label) tiles by relocating the excess into a `moved/` sub-directory.
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `splits` | `[train]` | Which partitions to reduce.
+
+ |
+| `target_bg_ratio` | `0.15` | Maximum allowed fraction of empty-label tiles in the dataset (e.g., 15%).
+
+ |
+| `moved_subdir` | `moved` | Subdirectory where excess background tiles are relocated.
+
+ |
+
+* **Input:** `paths.tiled_dir/{images,labels}/{split}/*.{tif,txt}` → **Output:** Moves excess to `paths.tiled_dir/moved/{images,labels}/`
+
+
+---
+
+### 2. Model Training (`configs/train.yaml`)
+
+The training phase utilizes the `ultralytics` framework for OBB detection. It manages transfer learning and data augmentation.
+
+#### Model & Training Parameters
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `model.weights` | `weights/yolo26m-obb.pt` | Architecture/Weights to load. `.pt` triggers fine-tuning. `.yaml` builds a custom architecture (e.g., P2 head). |
+| `training.epochs` | `100` | Maximum number of training epochs. |
+| `training.imgsz` | `2048` | Target tensor size for the network. |
+| `training.batch_size` | `2` | Number of tiles per batch. Kept low due to heavy VHR memory constraints. |
+| `training.patience` | `20` | Early stopping trigger. Stops if no val metrics improve for 20 epochs. |
+
+#### Augmentations (Geometric & Photometric)
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `augmentation.hsv_h` | `0.015` | Hue shift. Simulates different water colors/turbidity. |
+| `augmentation.mosaic` | `0.7` | Probability of combining 4 images into 1. Enhances contextual learning but alters object scale. |
+| `augmentation.degrees` | `180.0` | Rotation range (±180). Crucial for OBB since pirogues orient in all directions. |
+| `augmentation.scale` | `0.30` | Scale jitter. Helps the network generalize to different pirogue lengths. |
+
+* **Input:** `data/dataset.yaml` (Pointing to Stage 5/6 outputs) → **Output:** `runs/boat_obb/weights/best.pt`
+
+---
+
+### 3. Inference & Post-processing (`configs/predict.yaml` & `configs/postprocessing.yaml`)
+
+The prediction pipeline generates detections, merges tiles, suppresses false positives using geospatial logic (`geopandas`), and evaluates metrics.
+
+#### Prediction & Evaluation (`predict.yaml`)
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `pipeline.mode` | `evaluation` | `inference` (generate outputs) vs `evaluation` (generate outputs + match GT to calculate mAP). |
+| `model.weights` | `weights/50_x4_best.pt` | Path to the trained checkpoint to load for inference. |
+| `prediction.conf` | `0.20` | Confidence threshold. Detections below this probability are dropped. |
+| `prediction.global_nms_iou` | `0.20` | IoU threshold for Global NMS to remove duplicates created on overlapping tile boundaries. |
+| `evaluation.iou_threshold` | `0.25` | PASCAL VOC threshold. An overlap ≥ 25% with ground truth is required to count as a True Positive. |
+
+#### Spatial Filters (`postprocessing.yaml`)
+
+Executes purely geometric operations to prune false positives found on land.
+
+| Key | Default | Description / Impact |
+| --- | --- | --- |
+| `coastline_filter.min_area_fraction` | `0.80` | Requires ≥80% of a predicted OBB to sit inside the water mask. |
+| `buildings_filter.max_overlap_fraction` | `0.01` | Drops a prediction if ≥1% of its area overlaps a building polygon. |
+
+* **Input:** Raw Test GeoTIFFs + Checkpoint → **Output:** `predictions/raw/` → **Filtered Output:** `predictions/postprocessed/` + `results.csv`
+
+---
+
+## 💻 List of Commands to Run the Code
+
+The system uses configuration-driven CLI entry points. You do not need to modify Python code to toggle stages or tweak parameters.
 
 ```bash
-# Full pipeline
+# 1. Run the full preprocessing pipeline (Stages 1 through 6)
 python scripts/preprocessing.py --config configs/preprocessing.yaml
 
-# Partial rerun — specific stages only (skips enabled flags)
-python scripts/preprocessing.py --config configs/preprocessing.yaml \
-    --stages tiling
-```
+# 1b. Rerun only specific stages (e.g., skip to tiling)
+python scripts/preprocessing.py --config configs/preprocessing.yaml --stages tiling background_reduction
 
-Individual stages can also be disabled without touching the code by setting `enabled: false` in the `stages` list in `configs/preprocessing.yaml`.
-
----
-
-### 2. Model Training
-
-The training phase uses the Ultralytics YOLO framework for OBB detection.
-
-- **Configuration**: All hyperparameters, augmentations, and optimiser settings are defined in `configs/train.yaml`.
-- **Initialisation modes**: fine-tuning from a pretrained checkpoint, architectural transfer, or from-scratch training via a custom YAML.
-
-```bash
+# 2. Train the YOLO-OBB model
 python scripts/train.py --config configs/train.yaml
-```
 
----
+# 3. Run prediction in Inference mode (Outputs raw & postprocessed GeoJSONs)
+python scripts/predict.py --config configs/predict.yaml --mode inference
 
-### 3. Inference & Evaluation
-
-The prediction pipeline handles inference on geospatial data and computes rigorous OBB metrics.
-
-- **Inference mode**: generates detections on raw imagery with configured NMS and spatial filtering.
-- **Evaluation mode**: matches detections against ground truth using confidence-sorted greedy IoU matching (PASCAL VOC protocol) and computes per-class and global Precision, Recall, F1, and mAP@50.
-- **Post-processing**: modular false-positive suppression via coastline and building masks.
-
-```bash
+# 4. Run prediction in Evaluation mode (Matches GT, outputs mAP50 metrics & TP/FP/FN labeled GeoJSONs)
 python scripts/predict.py --config configs/predict.yaml --mode evaluation
+
 ```
 
 ---
 
-## 📝 Configuration
+## 📚 References & Dependencies
 
-All pipeline behaviour is driven by YAML files in `configs/`. The preprocessing pipeline reads a single file (`preprocessing.yaml`) that controls paths, enabled stages, and all per-stage hyperparameters. No code changes are needed to add, skip, or reorder stages.
+**Core Libraries Used in Code (`requirements.txt`):**
 
-[TODO] - training + Inference & Post-processing
----
+* `rasterio` (1.5.0): Windowed I/O and WarpedVRT resampling.
+* `geopandas` (0.14.3) & `Shapely` (2.1.2): Post-processing spatial intersections and OBB `minimum_rotated_rectangle` logic.
+* `pyproj` (3.7.2): Coordinate Reference System transformations.
+* `ultralytics` (8.4.1): Core YOLO backend for training and inference.
+* `affine` (2.4.0), `numpy` (2.4.4), `pandas` (3.0.2), `PyYAML` (6.0.3).
 
-## References
+**Academic & Technical References:**
 
-> **Ultralytics YOLO26**
-> Jocher, G., & Qiu, J. (2026). *Ultralytics YOLO26* (Version 26.0.0) [Computer software]. Available at [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) (License: AGPL-3.0)
+1. Airbus Defence and Space: Pléiades Neo User Guide. Airbus DS (2021).
+2. Basurto, X., et al.: Illuminating the multidimensional contributions of small-scale fisheries. *Nature* 637, 875-884 (2025).
+3. Cheng, G., et al.: Towards Large-Scale Small Object Detection: Survey and Benchmarks. *IEEE TPAMI* (2023).
+4. Ding, J., et al.: Learning RoI Transformer for Detecting Oriented Objects in Aerial Images. arXiv (2018).
+5. Jocher, G., Qiu, J., Chaurasia, A.: Ultralytics YOLO (2023). [GitHub](https://github.com/ultralytics/ultralytics)
+6. Luo, W., et al.: Understanding the Effective Receptive Field in Deep Convolutional Neural Networks. arXiv (2017).
+7. Zucchetta, M., et al.: Satellite-based monitoring of small boat for environmental studies: A systematic review. *JMSE* (2025).

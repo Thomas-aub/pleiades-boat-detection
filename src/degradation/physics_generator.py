@@ -180,7 +180,7 @@ def config_neo_to_phr() -> PipelineConfig:
     #   Neo Blue : 450–520 nm  vs  PHR Blue : 430–550 nm  (NEO-UG §2.1; PHR-UG §2.2.2)
     #   Neo Green: 530–590 nm  vs  PHR Green: 500–620 nm
     #   Neo Red  : 620–690 nm  vs  PHR Red  : 590–710 nm
-    config.spectral.srf_adjustment = True
+    config.spectral.srf_adjustment = False
 
     # Residual SRF uncertainty after band-matching correction.
     # Absolute radiometric calibration uncertainty ≤ 5% (NEO-UG §A.2.2.1,
@@ -206,8 +206,8 @@ def config_neo_to_phr() -> PipelineConfig:
     # so the PAN MTF drives the PSF. A small range [0.60, 0.64] captures
     # inter-image variability (off-nadir, attitude residuals) while staying
     # within the documented MTF specification.
-    config.spatial.psf_sigma.min = 0.60
-    config.spatial.psf_sigma.max = 0.64
+    config.spatial.psf_sigma.min = 0.55
+    config.spatial.psf_sigma.max = 0.65
 
     # -- Radiometric ----------------------------------------------------
 
@@ -245,8 +245,8 @@ def config_neo_to_phr() -> PipelineConfig:
     # The range [42, 44] accounts for scene-dependent SNR degradation
     # (low-radiance / off-nadir acquisitions) while capping well below
     # Neo's ~48 dB — ensuring noise is always added in the emulation.
-    config.random_noise.snr_db.min = 42
-    config.random_noise.snr_db.max = 44
+    config.random_noise.snr_db.min = 46
+    config.random_noise.snr_db.max = 50
 
     # Poisson weight: fraction of total noise variance attributable to
     # photon shot noise. For a well-exposed 12-bit pushbroom sensor,
@@ -363,9 +363,12 @@ def transform_neo_to_phr(
 # Batch entry point
 # ---------------------------------------------------------------------------
 
+
+
+
 def main() -> None:
-    input_folder  = Path("/home/thomas/Documents/code/pleiades-boat-detection/data/raw")
-    output_folder = Path("/home/thomas/Documents/code/pleiades-boat-detection/data/raw_50_physics")
+    input_folder  = Path("data/raw")
+    output_folder = Path("data/pleiades_synthetic/physics")
     output_folder.mkdir(parents=True, exist_ok=True)
 
     tif_files = list(input_folder.glob("*.tif"))
