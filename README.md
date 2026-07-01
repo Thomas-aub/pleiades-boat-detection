@@ -2,7 +2,7 @@
 
 ## Short Presentation
 
-This project provides an automated, end-to-end deep learning pipeline designed to detect and quantify small-scale artisanal fishing fleets (traditional non-motorized pirogues) along the coasts of Madagascar. Utilizing Very High-Resolution (VHR) satellite imagery (Pléiades Neo at $0.30~m/px$ and Pléiades at $0.50~m/px$), this tool addresses the "statistical invisibility" of artisanal fishing. Built around the Ultralytics YOLO26-OBB (Oriented Bounding Boxes) architecture, the project encompasses everything from raw GeoTIFF radiometric preprocessing and spatial upscaling, to leakage-free dataset stratification, model training, and geospatial post-processing for operational deployment.
+This project provides an automated, end-to-end deep learning pipeline designed to detect and quantify small-scale artisanal fishing fleets (traditional non-motorized pirogues) along the coasts of Madagascar. Utilizing Very High-Resolution (VHR) satellite imagery (Pléiades Neo at 0.30m/px and Pléiades at 0.50m/px), this tool addresses the "statistical invisibility" of artisanal fishing. Built around the Ultralytics YOLO26-OBB (Oriented Bounding Boxes) architecture, the project encompasses everything from raw GeoTIFF radiometric preprocessing and spatial upscaling, to leakage-free dataset stratification, model training, and geospatial post-processing for operational deployment.
 
 ## Features
 
