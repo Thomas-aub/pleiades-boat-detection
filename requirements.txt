@@ -11,3 +11,5 @@ tqdm==4.67.3
 ultralytics==8.4.1
 albumentations
 scipy
+psutil>=5.9            
+ 

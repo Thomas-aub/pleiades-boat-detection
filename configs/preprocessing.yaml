@@ -5,11 +5,13 @@
 #
 # Pipeline stages (run in this order, see scripts/preprocessing.py)
 # -------------------------------------------------------------------
-#   1  image_enhancement  - percentile stretch + gamma, then upsampling
-#   2  label_conversion   - GeoJSON OBB -> YOLO OBB (normalised to full image)
-#   3  dataset_split      - image-level train / val / test split
-#   4  slicing            - tiling of each split image + label projection
+#   0  degradation          - anti-alias blur + GSD downsampling
+#   1  image_enhancement    - percentile stretch + gamma, then upsampling
+#   2  label_conversion     - GeoJSON OBB -> YOLO OBB (normalised to full image)
+#   3  dataset_split        - image-level train / val / test split
+#   4  slicing              - tiling of each split image + label projection
 #   5  background_filtering - cap background-tile ratio per split
+#   6  data_augmentation    - synthesize extra augmented tiles (final step)
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -17,10 +19,41 @@
 # ---------------------------------------------------------------------------
 paths:
   raw_dir: "data/raw"                     # source GeoTIFFs + GeoJSONs
+  degraded_dir: "data/processed/degraded" # output of degradation
   enhanced_dir: "data/processed/enhanced" # output of image_enhancement
   labels_dir: "data/processed/labels"     # output of label_conversion (pre-split)
   dataset_dir: "data/dataset"             # output of dataset_split {train,val,test}/
   tiled_dir: "data/dataset/tiled"         # output of slicing {train,val,test}/
+
+# ---------------------------------------------------------------------------
+# Pipeline-level settings
+# ---------------------------------------------------------------------------
+pipeline:
+  # Peak RAM one worker needs while processing a single GeoTIFF (reading the
+  # source + writing the 2x upsampled output). Used to cap the process pool
+  # so it never allocates more than the available system RAM.
+  # Rule of thumb: ~3x the largest raw .tif file size on disk, in GB.
+  # Lower this if you see OOM kills; raise it to allow more parallelism.
+  ram_per_worker_gb: 4.0
+
+# ---------------------------------------------------------------------------
+# Stage 0 - GSD degradation (anti-alias blur + downsampling)
+# ---------------------------------------------------------------------------
+# Brings raw imagery down from its native GSD to the target sensor's GSD
+# (e.g. Pléiades Neo 0.3 m/px -> Pléiades 0.5 m/px) so the rest of the
+# pipeline always sees a consistent resolution domain. Set enabled: false
+# to skip this stage entirely (the source file is copied through as-is).
+degradation:
+  enabled: false
+
+  source_gsd_m: 0.3        # native ground sample distance of the raw imagery
+  target_gsd_m: 0.5        # desired output GSD
+
+  # Gaussian blur sigma = blur_factor * (target_gsd / source_gsd).
+  # Suppresses high-frequency content before decimation to avoid aliasing.
+  blur_factor: 0.45
+
+  compress: "deflate"
 
 # ---------------------------------------------------------------------------
 # Stage 1a - Radiometric normalisation (percentile stretch + gamma)
@@ -59,7 +92,7 @@ annotations:
     6: 1
     10: 1
 
-  skip_classes: [8, 9, 11]    # not boats (e.g. buoys) - discarded entirely
+  skip_classes: [8, 9, 11]    # classes discarded entirely
 
 # ---------------------------------------------------------------------------
 # Stage 3 - Image-level train / val / test split
@@ -102,3 +135,30 @@ background_reduction:
   images_subdir: "images"   # must match tiling.images_subdir
   labels_subdir: "labels"   # must match tiling.labels_subdir
   moved_subdir: "moved"     # excess background tiles are relocated here
+
+# ---------------------------------------------------------------------------
+# Stage 6 - Data augmentation (final step)
+# ---------------------------------------------------------------------------
+# Generates extra photometrically-augmented copies of every tile in the
+# configured split(s). Runs last so it only augments the final,
+# background-filtered tile set. Augmentations are pixel-only, so labels
+# are copied through unchanged for every augmented copy.
+data_augmentation:
+  enabled: true
+
+  splits: [train]            # usually only train; val/test stay untouched
+  n_augmentations: 2          # number of augmented copies generated per tile
+
+  images_subdir: "images"     # must match tiling.images_subdir
+  labels_subdir: "labels"     # must match tiling.labels_subdir
+
+  # Albumentations transforms, applied in this order.
+  # Each entry maps an Albumentations class name to its constructor kwargs.
+  transforms:
+    - name: GaussNoise
+      p: 1.0
+      std_range: [0.0, 0.04]
+    # - name: RandomBrightnessContrast
+    #   p: 0.5
+    #   brightness_limit: 0.1
+    #   contrast_limit: 0.1
